@@ -254,7 +254,7 @@
                             <!-- Numeric Inputs -->
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-md">
                                 <div class="flex flex-col gap-xs">
-                                    <label class="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider" for="kmDriven">Distance Driven (km)</label>
+                                    <label class="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider" for="kmDriven">Trip Distance (since last fuel)</label>
                                     <input class="w-full bg-surface-container-low text-on-surface text-base px-md py-sm rounded-lg outline-none focus:ring-2 focus:ring-primary/50 transition-shadow border-b border-outline-variant" id="kmDriven" type="number" min="0" step="0.1" placeholder="0.0" required>
                                 </div>
                                 <div class="flex flex-col gap-xs">
@@ -281,31 +281,60 @@
                                 </div>
                             </div>
 
-                            <!-- Live Estimation Bar -->
-                            <div class="flex flex-col sm:flex-row items-center justify-between gap-md bg-surface-container-low p-md rounded-xl">
-                                <div class="flex flex-col gap-sm w-full sm:w-auto">
-                                    <div class="flex items-center gap-sm">
-                                        <span class="material-symbols-outlined text-primary text-[18px]">speed</span>
-                                        <span class="text-sm text-on-surface-variant">Est. Mileage:</span>
-                                        <span class="text-xl font-semibold text-primary tracking-tight" id="live-mileage">--</span>
-                                        <span class="text-[11px] font-semibold text-on-surface-variant ml-1" id="est-unit-label">km/L</span>
-                                    </div>
-                                    <div class="flex items-center gap-sm">
-                                        <span class="material-symbols-outlined text-secondary text-[18px]">payments</span>
-                                        <span class="text-sm text-on-surface-variant">Cost per km:</span>
-                                        <span class="text-base font-bold text-secondary tracking-tight" id="live-cost-per-km">--</span>
-                                        <span class="text-[11px] font-semibold text-on-surface-variant ml-1">₹/km</span>
+                            <!-- Live Estimation / Preview Bar -->
+                            <div class="flex flex-col gap-md bg-surface-container-low p-md rounded-xl">
+                                
+                                <div id="preview-previous-cycle" class="hidden flex-col gap-sm pb-md border-b border-outline-variant/30">
+                                    <span class="text-[11px] font-semibold text-primary uppercase tracking-wider">Completing Previous Fuel Cycle</span>
+                                    <div class="grid grid-cols-2 sm:flex sm:flex-wrap gap-md sm:gap-lg">
+                                        <div class="flex flex-col">
+                                            <span class="text-[10px] text-on-surface-variant">Prev Amount</span>
+                                            <span class="text-sm font-semibold text-on-surface" id="prev-cycle-amount">--</span>
+                                        </div>
+                                        <div class="flex flex-col">
+                                            <span class="text-[10px] text-on-surface-variant">Prev Fuel</span>
+                                            <span class="text-sm font-semibold text-on-surface" id="prev-cycle-qty">--</span>
+                                        </div>
+                                        <div class="flex flex-col">
+                                            <span class="text-[10px] text-on-surface-variant">Distance</span>
+                                            <span class="text-sm font-semibold text-primary" id="prev-cycle-distance">--</span>
+                                        </div>
+                                        <div class="flex flex-col">
+                                            <span class="text-[10px] text-on-surface-variant">Mileage</span>
+                                            <span class="text-sm font-bold text-secondary" id="prev-cycle-mileage">--</span>
+                                        </div>
+                                        <div class="flex flex-col">
+                                            <span class="text-[10px] text-on-surface-variant">Cost/KM</span>
+                                            <span class="text-sm font-bold text-secondary" id="prev-cycle-cost">--</span>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="flex gap-sm w-full sm:w-auto">
-                                    <button type="button" id="cancelEditBtn" class="hidden px-lg py-sm rounded-full bg-surface-container text-on-surface-variant text-xs font-semibold uppercase tracking-wide hover:bg-surface-container-high transition-colors">
-                                        Cancel
-                                    </button>
-                                    <button type="submit" id="submitBtn" class="w-full sm:w-auto bg-primary text-on-primary text-xs font-semibold px-xl py-sm rounded-full shadow-md hover:shadow-lg hover:-translate-y-[1px] transition-all flex items-center justify-center gap-sm uppercase tracking-wide">
-                                        <span class="material-symbols-outlined text-[18px]">save</span>
-                                        <span id="submitBtnText">Save Entry</span>
-                                    </button>
+
+                                <div id="preview-new-cycle" class="flex-col gap-sm">
+                                    <span class="text-[11px] font-semibold text-primary uppercase tracking-wider" id="new-cycle-title">Starting Fuel Cycle</span>
+                                    <div class="flex flex-col sm:flex-row items-center justify-between gap-md">
+                                        <div class="flex flex-col gap-1 w-full sm:w-auto">
+                                            <div class="flex items-baseline gap-2">
+                                                <span class="text-xs text-on-surface-variant">Fuel Purchased:</span>
+                                                <span class="text-sm font-semibold text-on-surface" id="new-cycle-qty">--</span>
+                                            </div>
+                                            <div class="flex items-baseline gap-2">
+                                                <span class="text-xs text-on-surface-variant">Mileage:</span>
+                                                <span class="text-sm font-semibold text-on-surface-variant italic">Pending next fueling</span>
+                                            </div>
+                                        </div>
+                                        <div class="flex gap-sm w-full sm:w-auto mt-2 sm:mt-0">
+                                            <button type="button" id="cancelEditBtn" class="hidden px-lg py-sm rounded-full bg-surface-container text-on-surface-variant text-xs font-semibold uppercase tracking-wide hover:bg-surface-container-high transition-colors">
+                                                Cancel
+                                            </button>
+                                            <button type="submit" id="submitBtn" class="w-full sm:w-auto bg-primary text-on-primary text-xs font-semibold px-xl py-sm rounded-full shadow-md hover:shadow-lg hover:-translate-y-[1px] transition-all flex items-center justify-center gap-sm uppercase tracking-wide">
+                                                <span class="material-symbols-outlined text-[18px]">save</span>
+                                                <span id="submitBtnText">Save Entry</span>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
+                                
                             </div>
                         </form>
                     </div>
@@ -565,13 +594,16 @@
                 </div>
             </div>
             <div class="mt-auto pt-sm flex justify-between items-center bg-surface-container p-sm -mx-sm -mb-sm rounded-xl">
-                <div class="px-3 py-1.5 rounded-lg bg-secondary-container flex items-center gap-1.5 shadow-sm">
+                <div class="px-3 py-1.5 rounded-lg bg-secondary-container flex items-center gap-1.5 shadow-sm log-mileage-badge">
                     <span class="material-symbols-outlined text-[16px] text-on-secondary-container">speed</span>
                     <span class="text-xs font-bold text-on-secondary-container log-mileage">— km/L</span>
                 </div>
-                <div class="flex flex-col items-end gap-1">
-                    <span class="text-[10px] font-semibold bg-primary-container text-on-primary-container px-2 py-0.5 rounded log-fuel-badge">Petrol</span>
-                    <span class="text-[10px] font-semibold text-on-surface-variant log-vehicle-badge">Car</span>
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-semibold px-2 py-0.5 rounded log-status-badge">Completed</span>
+                    <div class="flex flex-col items-end gap-1">
+                        <span class="text-[10px] font-semibold bg-primary-container text-on-primary-container px-2 py-0.5 rounded log-fuel-badge">Petrol</span>
+                        <span class="text-[10px] font-semibold text-on-surface-variant log-vehicle-badge">Car</span>
+                    </div>
                 </div>
             </div>
         </div>

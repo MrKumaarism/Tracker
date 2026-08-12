@@ -142,14 +142,16 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             if (!e.price && e.spent && e.qty) e.price = +(e.spent / e.qty).toFixed(2);
             if (!e.price) e.price = e.fuelType === 'CNG' ? 83 : 102;
             if (!e.qty && e.price > 0) e.qty = +(e.spent / e.price).toFixed(3);
-            if (!e.mileage && e.qty > 0) e.mileage = +(e.km / e.qty).toFixed(2);
-            if (!e.costPerKm && e.km > 0) e.costPerKm = +(e.spent / e.km).toFixed(2);
             if (!e.unit) e.unit = e.fuelType === 'CNG' ? 'km/kg' : 'km/L';
             if (!e.createdAt) e.createdAt = Date.now();
             if (!e.updatedAt) e.updatedAt = Date.now();
+            if (e.tripEntered === undefined) {
+                e.tripEntered = e.km;
+            }
             return e;
         });
-        if (changed) saveToLocalStorage();
+        
+        recalculateChainsLocal();
     }
 
     // ═══════════════════════════════════════════════════════
@@ -250,6 +252,61 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     function saveToLocalStorage() {
         localStorage.setItem(LS_KEY, JSON.stringify(entries));
     }
+    
+    function recalculateChainsLocal() {
+        const groups = {};
+        entries.forEach(e => {
+            const key = e.vehicleType + '_' + e.fuelType;
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(e);
+        });
+
+        const updatedEntries = [];
+
+        for (const key in groups) {
+            const group = groups[key];
+            group.sort((a, b) => {
+                const dc = a.date.localeCompare(b.date);
+                return dc !== 0 ? dc : a.createdAt - b.createdAt;
+            });
+
+            for (let i = 0; i < group.length; i++) {
+                const entry = group[i];
+                entry.qty = +(entry.spent / entry.price).toFixed(3);
+                
+                if (i + 1 < group.length) {
+                    const nextEntry = group[i + 1];
+                    entry.distanceDriven = nextEntry.tripEntered || 0;
+                    if (entry.qty > 0 && entry.distanceDriven > 0) {
+                        entry.mileage = +(entry.distanceDriven / entry.qty).toFixed(2);
+                        entry.costPerKm = +(entry.spent / entry.distanceDriven).toFixed(2);
+                    } else {
+                        entry.mileage = null;
+                        entry.costPerKm = null;
+                    }
+                    entry.status = 'completed';
+                } else {
+                    entry.distanceDriven = null;
+                    entry.mileage = null;
+                    entry.costPerKm = null;
+                    entry.status = 'pending';
+                }
+                updatedEntries.push(entry);
+            }
+        }
+        entries = updatedEntries;
+        saveToLocalStorage();
+    }
+    
+    async function recalculateAndSyncChains() {
+        recalculateChainsLocal();
+        if (currentUser) {
+            for (const entry of entries) {
+                try { await putEntryFirestore(entry); } catch(e) {}
+            }
+        }
+        saveToLocalStorage();
+    }
 
     // ═══════════════════════════════════════════════════════
     //  NAVIGATION
@@ -306,16 +363,20 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         kmInput.addEventListener('input', calculateLive);
         priceInput.addEventListener('input', calculateLive);
         spentInput.addEventListener('input', calculateLive);
+        dateInput.addEventListener('change', calculateLive);
 
         // Fuel type change → update unit labels + default price
         $$('input[name="fuelType"]').forEach(radio => {
             radio.addEventListener('change', (e) => {
                 const isPetrol = e.target.value === 'Petrol';
                 priceUnitLabel.textContent = isPetrol ? '₹/L' : '₹/kg';
-                estUnitLabel.textContent = isPetrol ? 'km/L' : 'km/kg';
                 priceInput.value = isPetrol ? '102' : '83';
                 calculateLive();
             });
+        });
+        
+        $$('input[name="vehicleType"]').forEach(radio => {
+            radio.addEventListener('change', calculateLive);
         });
 
         // History filters
@@ -350,22 +411,76 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         const km    = parseFloat(kmInput.value);
         const price = parseFloat(priceInput.value);
         const spent = parseFloat(spentInput.value);
+        
+        const fuelRadio = $('input[name="fuelType"]:checked');
+        const vehRadio = $('input[name="vehicleType"]:checked');
+        const fuelType = fuelRadio ? fuelRadio.value : null;
+        const vehicleType = vehRadio ? vehRadio.value : null;
 
-        if (km > 0 && price > 0 && spent > 0) {
-            const qty = spent / price;
-            const mileage = (km / qty).toFixed(2);
-            const costPerKm = (spent / km).toFixed(2);
+        // UI Refs
+        const prevBox = $('#preview-previous-cycle');
+        const prevAmount = $('#prev-cycle-amount');
+        const prevQty = $('#prev-cycle-qty');
+        const prevDistance = $('#prev-cycle-distance');
+        const prevMileage = $('#prev-cycle-mileage');
+        const prevCost = $('#prev-cycle-cost');
+        
+        const newQty = $('#new-cycle-qty');
+        const newTitle = $('#new-cycle-title');
 
-            liveMileage.textContent = mileage;
-            liveMileage.classList.add('text-secondary');
-            liveMileage.classList.remove('text-primary');
-
-            liveCostPerKm.textContent = costPerKm;
+        // Calculate current
+        if (price > 0 && spent > 0) {
+            const currentQty = (spent / price).toFixed(3);
+            newQty.textContent = currentQty + (fuelType === 'CNG' ? ' kg' : ' L');
         } else {
-            liveMileage.textContent = '--';
-            liveMileage.classList.remove('text-secondary');
-            liveMileage.classList.add('text-primary');
-            liveCostPerKm.textContent = '--';
+            newQty.textContent = '--';
+        }
+
+        // Find previous pending entry
+        let prevEntry = null;
+        if (fuelType && vehicleType) {
+            const group = entries.filter(e => e.vehicleType === vehicleType && e.fuelType === fuelType);
+            group.sort((a, b) => {
+                const dc = a.date.localeCompare(b.date);
+                return dc !== 0 ? dc : a.createdAt - b.createdAt;
+            });
+            
+            const formDate = dateInput.value;
+            
+            if (editingId) {
+                const editIdx = group.findIndex(e => e.id === editingId);
+                if (editIdx > 0) prevEntry = group[editIdx - 1];
+            } else {
+                const priorEntries = group.filter(e => e.date <= formDate);
+                if (priorEntries.length > 0) {
+                    prevEntry = priorEntries[priorEntries.length - 1];
+                }
+            }
+        }
+
+        if (prevEntry) {
+            prevBox.classList.remove('hidden');
+            prevBox.classList.add('flex');
+            newTitle.textContent = 'New Fuel Cycle';
+
+            prevAmount.textContent = '₹' + prevEntry.spent.toFixed(2);
+            prevQty.textContent = prevEntry.qty + (fuelType === 'CNG' ? ' kg' : ' L');
+            
+            if (km > 0) {
+                prevDistance.textContent = km + ' km';
+                const mileage = (km / prevEntry.qty).toFixed(2);
+                const cost = (prevEntry.spent / km).toFixed(2);
+                prevMileage.textContent = mileage + (fuelType === 'CNG' ? ' km/kg' : ' km/L');
+                prevCost.textContent = '₹' + cost + '/km';
+            } else {
+                prevDistance.textContent = '--';
+                prevMileage.textContent = '--';
+                prevCost.textContent = '--';
+            }
+        } else {
+            prevBox.classList.add('hidden');
+            prevBox.classList.remove('flex');
+            newTitle.textContent = 'Starting Fuel Cycle';
         }
     }
 
@@ -382,26 +497,23 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         const spent       = parseFloat(spentInput.value);
         const date        = dateInput.value;
 
-        if (isNaN(km) || isNaN(price) || isNaN(spent) || km <= 0 || price <= 0 || spent <= 0) {
+        if (isNaN(km) || isNaN(price) || isNaN(spent) || km < 0 || price <= 0 || spent <= 0) {
             showToast('⚠️ Please fill all fields with valid numbers');
             return;
         }
 
-        const qty       = +(spent / price).toFixed(3);
-        const mileage   = +(km / qty).toFixed(2);
-        const costPerKm = +(spent / km).toFixed(2);
-        const unit      = fuelType === 'CNG' ? 'km/kg' : 'km/L';
+        const qty  = +(spent / price).toFixed(3);
+        const unit = fuelType === 'CNG' ? 'km/kg' : 'km/L';
 
         const entry = {
             id: editingId || generateId(),
             fuelType,
             vehicleType,
-            km,
+            km: km, // Keep for legacy
+            tripEntered: km,
             price,
             spent,
             qty,
-            mileage,
-            costPerKm,
             unit,
             date,
             createdAt: editingId
@@ -417,25 +529,26 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             entries.push(entry);
         }
 
-        await persist(entry);
-
         // Button animation
         const origHtml = submitBtn.innerHTML;
         submitBtn.innerHTML = `<span class="material-symbols-outlined text-[18px] animate-spin">sync</span><span>Saving...</span>`;
         submitBtn.classList.add('opacity-80', 'pointer-events-none');
+
+        // recalculate and sync
+        await recalculateAndSyncChains();
 
         setTimeout(() => {
             submitBtn.innerHTML = `<span class="material-symbols-outlined text-[18px]">check</span><span>Saved!</span>`;
             submitBtn.classList.replace('bg-primary', 'bg-secondary');
 
             setTimeout(() => {
-                showToast(editingId ? '✅ Entry updated' : '✅ Entry saved');
+                showToast(editingId ? '✅ Entry updated' : '✅ Entry saved. Reset Trip Meter to 0.');
                 resetForm();
                 submitBtn.innerHTML = origHtml;
                 submitBtn.classList.replace('bg-secondary', 'bg-primary');
                 submitBtn.classList.remove('opacity-80', 'pointer-events-none');
                 render();
-            }, 1200);
+            }, 1500);
         }, 600);
     }
 
@@ -459,14 +572,13 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         if (fuelRadio) fuelRadio.checked = true;
         if (vehRadio) vehRadio.checked = true;
 
-        kmInput.value    = entry.km;
+        kmInput.value    = entry.tripEntered !== undefined ? entry.tripEntered : entry.km;
         priceInput.value = entry.price;
         spentInput.value = entry.spent;
         dateInput.value  = entry.date;
 
         const isPetrol = entry.fuelType === 'Petrol';
         priceUnitLabel.textContent = isPetrol ? '₹/L' : '₹/kg';
-        estUnitLabel.textContent   = isPetrol ? 'km/L' : 'km/kg';
 
         formHeadingText.textContent = 'Edit Entry';
         formIconEl.textContent = 'edit';
@@ -499,17 +611,13 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
         priceInput.value = '102';
         priceUnitLabel.textContent = '₹/L';
-        estUnitLabel.textContent = 'km/L';
 
         formHeadingText.textContent = 'Log Fuel Entry';
         formIconEl.textContent = 'add_circle';
         submitBtnText.textContent = 'Save Entry';
         cancelEditBtn.classList.add('hidden');
 
-        liveMileage.textContent = '--';
-        liveMileage.classList.remove('text-secondary');
-        liveMileage.classList.add('text-primary');
-        liveCostPerKm.textContent = '--';
+        calculateLive();
     }
 
     // ─── Delete ───
@@ -519,7 +627,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             if (currentUser) {
                 try { await deleteEntryFirestore(id); } catch(e) { console.error(e); }
             }
-            saveToLocalStorage();
+            await recalculateAndSyncChains();
             showToast('🗑️ Entry deleted');
             render();
         });
@@ -535,9 +643,11 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     }
 
     function updateStats() {
-        const totalKm    = entries.reduce((s, e) => s + e.km, 0);
-        const totalSpent = entries.reduce((s, e) => s + e.spent, 0);
-        const totalQty   = entries.reduce((s, e) => s + (e.qty || 0), 0);
+        const completedEntries = entries.filter(e => e.status === 'completed');
+        
+        const totalKm    = completedEntries.reduce((s, e) => s + (e.distanceDriven || 0), 0);
+        const totalSpent = entries.reduce((s, e) => s + (e.spent || 0), 0);
+        const totalQty   = completedEntries.reduce((s, e) => s + (e.qty || 0), 0);
         const overallAvg = totalQty > 0 ? (totalKm / totalQty).toFixed(1) : '—';
 
         // This month
@@ -618,20 +728,51 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             // Populate data
             clone.querySelector('.log-date').textContent = formatDatePretty(entry.date);
             clone.querySelector('.log-time').textContent = entry.date;
-            clone.querySelector('.log-km').textContent = entry.km;
             clone.querySelector('.log-spent').textContent = formatNumber(entry.spent);
             clone.querySelector('.log-price').textContent = entry.price ? entry.price.toFixed(2) : '—';
             clone.querySelector('.log-price-unit').textContent = entry.fuelType === 'CNG' ? '/kg' : '/L';
-            clone.querySelector('.log-cost-km').textContent = entry.costPerKm ? entry.costPerKm.toFixed(2) : '—';
-            clone.querySelector('.log-mileage').textContent = `${entry.mileage || '—'} ${entry.unit || 'km/L'}`;
             clone.querySelector('.log-fuel-badge').textContent = entry.fuelType;
             clone.querySelector('.log-vehicle-badge').textContent = `${entry.vehicleType === 'Car' ? '🚗' : '🏍️'} ${entry.vehicleType}`;
 
-            // High-efficiency highlight
-            if (entry.mileage && entry.mileage > 25) {
-                const bar = clone.querySelector('.card-bar');
-                bar.classList.add('from-green-400', 'to-green-600');
-                bar.classList.remove('from-primary', 'to-secondary');
+            const isPending = entry.status === 'pending';
+            const kmEl = clone.querySelector('.log-km');
+            const costEl = clone.querySelector('.log-cost-km');
+            const mileageEl = clone.querySelector('.log-mileage');
+            const statusBadge = clone.querySelector('.log-status-badge');
+            const mileageBadge = clone.querySelector('.log-mileage-badge');
+
+            if (isPending) {
+                kmEl.textContent = 'Pending';
+                kmEl.classList.add('text-sm', 'italic', 'text-on-surface-variant');
+                kmEl.classList.remove('text-xl', 'text-on-surface');
+                clone.querySelector('.log-km-unit')?.remove(); // if exists
+                
+                costEl.textContent = 'Pending';
+                
+                mileageEl.textContent = 'Pending';
+                
+                statusBadge.textContent = 'Active Cycle';
+                statusBadge.classList.replace('bg-surface-container', 'bg-primary-container');
+                statusBadge.classList.replace('text-on-surface', 'text-on-primary-container');
+                
+                mileageBadge.classList.replace('bg-secondary-container', 'bg-surface-container-high');
+                mileageBadge.classList.replace('text-on-secondary-container', 'text-on-surface-variant');
+                mileageBadge.querySelector('span').classList.replace('text-on-secondary-container', 'text-on-surface-variant');
+                mileageEl.classList.replace('text-on-secondary-container', 'text-on-surface-variant');
+            } else {
+                kmEl.textContent = entry.distanceDriven;
+                costEl.textContent = entry.costPerKm ? entry.costPerKm.toFixed(2) : '—';
+                mileageEl.textContent = `${entry.mileage || '—'} ${entry.unit || 'km/L'}`;
+                
+                statusBadge.textContent = 'Completed';
+                statusBadge.classList.add('bg-surface-container', 'text-on-surface-variant');
+                
+                // High-efficiency highlight
+                if (entry.mileage && entry.mileage > (entry.fuelType === 'CNG' ? 22 : 18)) {
+                    const bar = clone.querySelector('.card-bar');
+                    bar.classList.add('from-green-400', 'to-green-600');
+                    bar.classList.remove('from-primary', 'to-secondary');
+                }
             }
 
             // Edit handler
