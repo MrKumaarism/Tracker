@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Users\\Ritesh\\Music\\Fuel Tracker\\.claude\\sync.cmd\""
+          }
+        ]
+      }
+    ]
+  }
+}
