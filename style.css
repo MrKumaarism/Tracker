@@ -6,49 +6,114 @@
 ::-webkit-scrollbar { display: none; }
 body { -ms-overflow-style: none; scrollbar-width: none; overscroll-behavior: none; }
 
-/* ─── Smooth base ─── */
+/* ─── Smooth base & Paper Texture ─── */
 html { scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }
 main > :first-child { margin-top: 0 !important; }
 main > :last-child { margin-bottom: 0 !important; }
+
+body {
+    /* Paper Texture Overlay */
+    background-color: #F5F2E9;
+    background-image: 
+        radial-gradient(#D5D2C9 1px, transparent 1px),
+        radial-gradient(#D5D2C9 1px, transparent 1px);
+    background-size: 20px 20px;
+    background-position: 0 0, 10px 10px;
+    -ms-overflow-style: none; scrollbar-width: none; overscroll-behavior: none;
+}
 
 /* ═══════ Navigation Active States ═══════ */
 
 /* Sidebar nav links */
 .nav-link {
-    color: #434654; /* on-surface-variant */
+    color: #4A4A4A; /* on-surface-variant */
+    border: 1px dashed transparent;
 }
 .nav-link:hover {
-    background-color: #e6e8ea; /* surface-container-high */
+    background-color: #EBE8DF; /* surface-container-low */
+    border-color: #4A4A4A;
 }
 .nav-link.active {
-    background-color: #003d9b; /* primary */
-    color: #ffffff; /* on-primary */
-    font-weight: 600;
+    background-color: #1A237E; /* primary */
+    color: #FFFFFF; /* on-primary */
+    font-weight: 700;
+    border: 1px solid #1A237E;
 }
 
 /* Bottom nav links */
 .bottom-nav-link {
-    color: #434654; /* on-surface-variant */
+    color: #4A4A4A; /* on-surface-variant */
 }
 .bottom-nav-link.active {
-    color: #003d9b; /* primary */
+    color: #1A237E; /* primary */
     font-weight: 700;
+    border-bottom: 2px dashed #1A237E;
 }
 
 /* ═══════ Filter Pills ═══════ */
 .filter-pill {
-    background-color: #eceef0; /* surface-container */
-    color: #434654; /* on-surface-variant */
+    background-color: #FFFFFF; /* surface */
+    color: #2D2D2D; /* on-background */
+    border: 1px dashed #2D2D2D;
     transition: all 0.2s ease;
 }
 .filter-pill:hover {
-    background-color: #e6e8ea; /* surface-container-high */
+    background-color: #EBE8DF; /* surface-container-low */
 }
 .filter-pill.active {
-    background-color: #003d9b; /* primary */
-    color: #ffffff; /* on-primary */
-    box-shadow: 0 1px 3px rgba(0, 61, 155, 0.25);
+    background-color: #FF7F50; /* secondary */
+    color: #2D2D2D; /* on-secondary */
+    border: 1px solid #2D2D2D;
+    font-weight: 700;
+    box-shadow: 2px 2px 0px #2D2D2D;
+    transform: translate(-1px, -1px);
 }
+
+/* ═══════ Travel Stamps & Tickets ═══════ */
+.stamp {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    border: 2px solid currentColor;
+    border-radius: 4px;
+    font-family: 'Courier Prime', monospace;
+    letter-spacing: 2px;
+    /* Simulate ink bleed */
+    box-shadow: 0 0 2px currentColor inset, 0 0 2px currentColor;
+    opacity: 0.85;
+}
+.stamp.rotated-1 { transform: rotate(-5deg); }
+.stamp.rotated-2 { transform: rotate(3deg); }
+.stamp.completed {
+    color: #1A237E; /* Passport Blue */
+}
+.stamp.pending {
+    color: #B71C1C; /* Stamp Red */
+}
+
+/* Boarding Pass Ticket layout */
+.ticket-card {
+    background-color: #FFFFFF;
+    border: 1px solid #2D2D2D;
+    position: relative;
+    box-shadow: 4px 4px 0px rgba(45, 45, 45, 0.1);
+}
+.ticket-card::before, .ticket-card::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 20px;
+    height: 20px;
+    background-color: #F5F2E9;
+    border-radius: 50%;
+    border: 1px solid #2D2D2D;
+    transform: translateY(-50%);
+    z-index: 10;
+}
+.ticket-card::before { left: -11px; border-right-color: transparent; border-top-color: transparent; transform: translateY(-50%) rotate(45deg); }
+.ticket-card::after { right: -11px; border-left-color: transparent; border-bottom-color: transparent; transform: translateY(-50%) rotate(45deg); }
+
 
 /* ═══════ Toast ═══════ */
 .toast-show {

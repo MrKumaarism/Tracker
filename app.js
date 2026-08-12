@@ -657,19 +657,19 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             .filter(e => e.date && e.date.startsWith(monthStr))
             .reduce((s, e) => s + e.spent, 0);
 
-        statTotalKm.textContent      = formatNumber(totalKm);
-        statTotalEntries.textContent = entries.length;
-        statTotalSpent.textContent   = formatNumber(totalSpent);
-        statOverallAvg.textContent   = overallAvg;
-        statMonthSpent.textContent   = formatNumber(monthSpent);
-        totalLogsCounter.textContent = entries.length;
+        if (statTotalKm) statTotalKm.textContent      = formatNumber(totalKm);
+        if (statTotalEntries) statTotalEntries.textContent = entries.length;
+        if (statTotalSpent) statTotalSpent.textContent   = formatNumber(totalSpent);
+        if (statOverallAvg) statOverallAvg.textContent   = overallAvg;
+        if (statMonthSpent) statMonthSpent.textContent   = formatNumber(monthSpent);
+        if (totalLogsCounter) totalLogsCounter.textContent = entries.length;
 
-        // Progress bars (decorative, proportional)
+        // Progress bars (decorative, proportional) - Check if they exist first
         const maxKm = Math.max(totalKm, 1);
-        barKm.style.width      = `${Math.min((totalKm / 50000) * 100, 100)}%`;
-        barEntries.style.width  = `${Math.min((entries.length / 100) * 100, 100)}%`;
-        barAvg.style.width      = overallAvg !== '—' ? `${Math.min((parseFloat(overallAvg) / 50) * 100, 100)}%` : '0%';
-        barMonth.style.width    = `${Math.min((monthSpent / 10000) * 100, 100)}%`;
+        if (barKm) barKm.style.width      = `${Math.min((totalKm / 50000) * 100, 100)}%`;
+        if (barEntries) barEntries.style.width  = `${Math.min((entries.length / 100) * 100, 100)}%`;
+        if (barAvg) barAvg.style.width      = overallAvg !== '—' ? `${Math.min((parseFloat(overallAvg) / 50) * 100, 100)}%` : '0%';
+        if (barMonth) barMonth.style.width    = `${Math.min((monthSpent / 10000) * 100, 100)}%`;
     }
 
     function renderHistory() {
@@ -752,27 +752,20 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                 mileageEl.textContent = 'Pending';
                 
                 statusBadge.textContent = 'Active Cycle';
-                statusBadge.classList.replace('bg-surface-container', 'bg-primary-container');
-                statusBadge.classList.replace('text-on-surface', 'text-on-primary-container');
+                statusBadge.classList.remove('completed', 'rotated-1');
+                statusBadge.classList.add('pending', 'rotated-2');
                 
-                mileageBadge.classList.replace('bg-secondary-container', 'bg-surface-container-high');
-                mileageBadge.classList.replace('text-on-secondary-container', 'text-on-surface-variant');
-                mileageBadge.querySelector('span').classList.replace('text-on-secondary-container', 'text-on-surface-variant');
-                mileageEl.classList.replace('text-on-secondary-container', 'text-on-surface-variant');
+                mileageBadge.classList.add('opacity-50');
             } else {
                 kmEl.textContent = entry.distanceDriven;
                 costEl.textContent = entry.costPerKm ? entry.costPerKm.toFixed(2) : '—';
                 mileageEl.textContent = `${entry.mileage || '—'} ${entry.unit || 'km/L'}`;
                 
                 statusBadge.textContent = 'Completed';
-                statusBadge.classList.add('bg-surface-container', 'text-on-surface-variant');
+                statusBadge.classList.remove('pending', 'rotated-2');
+                statusBadge.classList.add('completed', 'rotated-1');
                 
-                // High-efficiency highlight
-                if (entry.mileage && entry.mileage > (entry.fuelType === 'CNG' ? 22 : 18)) {
-                    const bar = clone.querySelector('.card-bar');
-                    bar.classList.add('from-green-400', 'to-green-600');
-                    bar.classList.remove('from-primary', 'to-secondary');
-                }
+                mileageBadge.classList.remove('opacity-50');
             }
 
             // Edit handler
