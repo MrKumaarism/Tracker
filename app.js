@@ -1,0 +1,745 @@
+/* ═══════════════════════════════════════════════════════
+   Fuel Tracker — Application Logic
+   IndexedDB + localStorage | CRUD | Export/Import | PWA
+   ═══════════════════════════════════════════════════════ */
+
+(() => {
+    'use strict';
+
+    // ─── Constants ───
+    const DB_NAME = 'FuelTrackerDB';
+    const DB_VERSION = 1;
+    const STORE_NAME = 'entries';
+    const LS_KEY = 'fuel_tracker_entries';
+
+    // ─── State ───
+    let db = null;
+    let entries = [];
+    let editingId = null;
+    let useIndexedDB = true;
+    let activeFilter = 'All';
+
+    // ─── DOM Helpers ───
+    const $ = (s) => document.querySelector(s);
+    const $$ = (s) => document.querySelectorAll(s);
+
+    // ─── DOM Refs ───
+    const fuelForm       = $('#fuelForm');
+    const editIdInput    = $('#editId');
+    const kmInput        = $('#kmDriven');
+    const priceInput     = $('#fuelPrice');
+    const spentInput     = $('#amountSpent');
+    const dateInput      = $('#entryDate');
+    const liveMileage    = $('#live-mileage');
+    const liveCostPerKm  = $('#live-cost-per-km');
+    const priceUnitLabel = $('#fuel-price-unit-label');
+    const estUnitLabel   = $('#est-unit-label');
+    const submitBtn      = $('#submitBtn');
+    const submitBtnText  = $('#submitBtnText');
+    const cancelEditBtn  = $('#cancelEditBtn');
+    const formHeadingText = $('#formHeadingText');
+    const formIconEl     = $('#formIconEl');
+
+    // Stats
+    const statTotalKm      = $('#stat-total-km');
+    const statTotalEntries  = $('#stat-total-entries');
+    const statTotalSpent    = $('#stat-total-spent');
+    const statOverallAvg    = $('#stat-overall-avg');
+    const statAvgUnit       = $('#stat-avg-unit');
+    const statMonthSpent    = $('#stat-month-spent');
+    const totalLogsCounter  = $('#total-logs-counter');
+    const dataEntryCount    = $('#data-entry-count');
+    const dataStorageType   = $('#data-storage-type');
+
+    // Progress bars
+    const barKm      = $('#bar-km');
+    const barEntries = $('#bar-entries');
+    const barAvg     = $('#bar-avg');
+    const barMonth   = $('#bar-month');
+
+    // History
+    const historyList      = $('#history-list');
+    const historyEmpty     = $('#history-empty-state');
+    const historySearch    = $('#historySearch');
+    const historyFilters   = $('#historyFilters');
+    const emptyAddBtn      = $('#emptyAddBtn');
+    const cardTemplate     = $('#log-card-template');
+
+    // Data management
+    const exportJsonBtn  = $('#exportJsonBtn');
+    const exportCsvBtn   = $('#exportCsvBtn');
+    const importFile     = $('#importFile');
+    const clearBtn       = $('#clearBtn');
+
+    // Toast & Confirm
+    const toastEl        = $('#toast');
+    const confirmOverlay = $('#confirmOverlay');
+    const confirmMessage = $('#confirmMessage');
+    const confirmYes     = $('#confirmYes');
+    const confirmNo      = $('#confirmNo');
+
+    // ═══════════════════════════════════════════════════════
+    //  INIT
+    // ═══════════════════════════════════════════════════════
+    async function init() {
+        setDefaultDate();
+        bindEvents();
+        initNavigation();
+        registerServiceWorker();
+
+        try {
+            await openDB();
+            entries = await getAllEntries();
+        } catch {
+            useIndexedDB = false;
+            entries = loadFromLocalStorage();
+        }
+
+        migrateEntries();
+        render();
+    }
+
+    function setDefaultDate() {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        dateInput.value = `${yyyy}-${mm}-${dd}`;
+    }
+
+    // ─── Migrate old entry format ───
+    function migrateEntries() {
+        let changed = false;
+        entries = entries.map(e => {
+            // Old format used 'cost' instead of 'spent'
+            if (e.cost !== undefined && e.spent === undefined) {
+                e.spent = e.cost;
+                delete e.cost;
+                changed = true;
+            }
+            // Ensure spent is a valid number
+            if (typeof e.spent !== 'number' || isNaN(e.spent)) e.spent = 0;
+            if (typeof e.km !== 'number' || isNaN(e.km)) e.km = 0;
+            // Derive missing fields
+            if (!e.price && e.spent && e.qty) e.price = +(e.spent / e.qty).toFixed(2);
+            if (!e.price) e.price = e.fuelType === 'CNG' ? 83 : 102;
+            if (!e.qty && e.price > 0) e.qty = +(e.spent / e.price).toFixed(3);
+            if (!e.mileage && e.qty > 0) e.mileage = +(e.km / e.qty).toFixed(2);
+            if (!e.costPerKm && e.km > 0) e.costPerKm = +(e.spent / e.km).toFixed(2);
+            if (!e.unit) e.unit = e.fuelType === 'CNG' ? 'km/kg' : 'km/L';
+            if (!e.createdAt) e.createdAt = Date.now();
+            if (!e.updatedAt) e.updatedAt = Date.now();
+            return e;
+        });
+        if (changed) saveToLocalStorage();
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  IndexedDB
+    // ═══════════════════════════════════════════════════════
+    function openDB() {
+        return new Promise((resolve, reject) => {
+            if (!window.indexedDB) return reject(new Error('No IndexedDB'));
+            const req = indexedDB.open(DB_NAME, DB_VERSION);
+            req.onupgradeneeded = (e) => {
+                const database = e.target.result;
+                if (!database.objectStoreNames.contains(STORE_NAME)) {
+                    const store = database.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                    store.createIndex('date', 'date', { unique: false });
+                }
+            };
+            req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    function getAllEntries() {
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const req = tx.objectStore(STORE_NAME).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    function putEntry(entry) {
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const req = tx.objectStore(STORE_NAME).put(entry);
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    function deleteEntryDB(id) {
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const req = tx.objectStore(STORE_NAME).delete(id);
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    function clearDB() {
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const req = tx.objectStore(STORE_NAME).clear();
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    // ─── localStorage fallback ───
+    function loadFromLocalStorage() {
+        try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; }
+        catch { return []; }
+    }
+    function saveToLocalStorage() {
+        localStorage.setItem(LS_KEY, JSON.stringify(entries));
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  NAVIGATION
+    // ═══════════════════════════════════════════════════════
+    function initNavigation() {
+        // Sidebar links
+        $$('.nav-link').forEach(link => {
+            link.addEventListener('click', () => navigate(link.dataset.page));
+        });
+        // Bottom nav links
+        $$('.bottom-nav-link').forEach(link => {
+            link.addEventListener('click', () => navigate(link.dataset.page));
+        });
+    }
+
+    function navigate(page) {
+        // Hide all pages
+        $$('.page-section').forEach(s => s.classList.add('hidden'));
+        // Show target page
+        const target = $(`#page-${page}`);
+        if (target) {
+            target.classList.remove('hidden');
+            // Re-trigger animation
+            target.style.animation = 'none';
+            target.offsetHeight; // reflow
+            target.style.animation = '';
+        }
+
+        // Update sidebar active
+        $$('.nav-link').forEach(l => l.classList.toggle('active', l.dataset.page === page));
+        // Update bottom nav active
+        $$('.bottom-nav-link').forEach(l => l.classList.toggle('active', l.dataset.page === page));
+
+        // Update header title
+        const titles = { dashboard: 'Dashboard', history: 'History', data: 'Data' };
+        const headerTitle = $('#headerPageTitle');
+        if (headerTitle) headerTitle.textContent = titles[page] || '';
+
+        // Scroll to top
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  EVENTS
+    // ═══════════════════════════════════════════════════════
+    function bindEvents() {
+        fuelForm.addEventListener('submit', handleSubmit);
+        cancelEditBtn.addEventListener('click', cancelEdit);
+
+        // Live calculation
+        kmInput.addEventListener('input', calculateLive);
+        priceInput.addEventListener('input', calculateLive);
+        spentInput.addEventListener('input', calculateLive);
+
+        // Fuel type change → update unit labels + default price
+        $$('input[name="fuelType"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                const isPetrol = e.target.value === 'Petrol';
+                priceUnitLabel.textContent = isPetrol ? '₹/L' : '₹/kg';
+                estUnitLabel.textContent = isPetrol ? 'km/L' : 'km/kg';
+                priceInput.value = isPetrol ? '102' : '83';
+                calculateLive();
+            });
+        });
+
+        // History filters
+        historyFilters.addEventListener('click', (e) => {
+            const pill = e.target.closest('.filter-pill');
+            if (!pill) return;
+            activeFilter = pill.dataset.filter;
+            $$('.filter-pill').forEach(p => p.classList.toggle('active', p === pill));
+            renderHistory();
+        });
+
+        // History search
+        historySearch.addEventListener('input', renderHistory);
+
+        // Empty state → go to dashboard
+        emptyAddBtn.addEventListener('click', () => navigate('dashboard'));
+
+        // Data actions
+        exportJsonBtn.addEventListener('click', exportJSON);
+        exportCsvBtn.addEventListener('click', exportCSV);
+        importFile.addEventListener('change', handleImport);
+        clearBtn.addEventListener('click', handleClear);
+
+        // Confirm dialog
+        confirmNo.addEventListener('click', () => confirmOverlay.classList.add('hidden'));
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  LIVE CALCULATION
+    // ═══════════════════════════════════════════════════════
+    function calculateLive() {
+        const km    = parseFloat(kmInput.value);
+        const price = parseFloat(priceInput.value);
+        const spent = parseFloat(spentInput.value);
+
+        if (km > 0 && price > 0 && spent > 0) {
+            const qty = spent / price;
+            const mileage = (km / qty).toFixed(2);
+            const costPerKm = (spent / km).toFixed(2);
+
+            liveMileage.textContent = mileage;
+            liveMileage.classList.add('text-secondary');
+            liveMileage.classList.remove('text-primary');
+
+            liveCostPerKm.textContent = costPerKm;
+        } else {
+            liveMileage.textContent = '--';
+            liveMileage.classList.remove('text-secondary');
+            liveMileage.classList.add('text-primary');
+            liveCostPerKm.textContent = '--';
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  FORM SUBMIT (Add / Edit)
+    // ═══════════════════════════════════════════════════════
+    async function handleSubmit(e) {
+        e.preventDefault();
+
+        const fuelType    = $('input[name="fuelType"]:checked').value;
+        const vehicleType = $('input[name="vehicleType"]:checked').value;
+        const km          = parseFloat(kmInput.value);
+        const price       = parseFloat(priceInput.value);
+        const spent       = parseFloat(spentInput.value);
+        const date        = dateInput.value;
+
+        if (isNaN(km) || isNaN(price) || isNaN(spent) || km <= 0 || price <= 0 || spent <= 0) {
+            showToast('⚠️ Please fill all fields with valid numbers');
+            return;
+        }
+
+        const qty       = +(spent / price).toFixed(3);
+        const mileage   = +(km / qty).toFixed(2);
+        const costPerKm = +(spent / km).toFixed(2);
+        const unit      = fuelType === 'CNG' ? 'km/kg' : 'km/L';
+
+        const entry = {
+            id: editingId || generateId(),
+            fuelType,
+            vehicleType,
+            km,
+            price,
+            spent,
+            qty,
+            mileage,
+            costPerKm,
+            unit,
+            date,
+            createdAt: editingId
+                ? (entries.find(en => en.id === editingId)?.createdAt || Date.now())
+                : Date.now(),
+            updatedAt: Date.now(),
+        };
+
+        if (editingId) {
+            const idx = entries.findIndex(en => en.id === editingId);
+            if (idx !== -1) entries[idx] = entry;
+        } else {
+            entries.push(entry);
+        }
+
+        await persist(entry);
+
+        // Button animation
+        const origHtml = submitBtn.innerHTML;
+        submitBtn.innerHTML = `<span class="material-symbols-outlined text-[18px] animate-spin">sync</span><span>Saving...</span>`;
+        submitBtn.classList.add('opacity-80', 'pointer-events-none');
+
+        setTimeout(() => {
+            submitBtn.innerHTML = `<span class="material-symbols-outlined text-[18px]">check</span><span>Saved!</span>`;
+            submitBtn.classList.replace('bg-primary', 'bg-secondary');
+
+            setTimeout(() => {
+                showToast(editingId ? '✅ Entry updated' : '✅ Entry saved');
+                resetForm();
+                submitBtn.innerHTML = origHtml;
+                submitBtn.classList.replace('bg-secondary', 'bg-primary');
+                submitBtn.classList.remove('opacity-80', 'pointer-events-none');
+                render();
+            }, 1200);
+        }, 600);
+    }
+
+    async function persist(entry) {
+        if (useIndexedDB) {
+            try { await putEntry(entry); } catch { /* fallback below */ }
+        }
+        saveToLocalStorage();
+    }
+
+    // ─── Edit ───
+    function startEdit(id) {
+        const entry = entries.find(en => en.id === id);
+        if (!entry) return;
+
+        editingId = id;
+
+        // Set radio buttons
+        const fuelRadio = $(`input[name="fuelType"][value="${entry.fuelType}"]`);
+        const vehRadio = $(`input[name="vehicleType"][value="${entry.vehicleType}"]`);
+        if (fuelRadio) fuelRadio.checked = true;
+        if (vehRadio) vehRadio.checked = true;
+
+        kmInput.value    = entry.km;
+        priceInput.value = entry.price;
+        spentInput.value = entry.spent;
+        dateInput.value  = entry.date;
+
+        const isPetrol = entry.fuelType === 'Petrol';
+        priceUnitLabel.textContent = isPetrol ? '₹/L' : '₹/kg';
+        estUnitLabel.textContent   = isPetrol ? 'km/L' : 'km/kg';
+
+        formHeadingText.textContent = 'Edit Entry';
+        formIconEl.textContent = 'edit';
+        submitBtnText.textContent = 'Update Entry';
+        cancelEditBtn.classList.remove('hidden');
+
+        calculateLive();
+        navigate('dashboard');
+
+        // Scroll form into view
+        setTimeout(() => {
+            fuelForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 400);
+    }
+
+    function cancelEdit() {
+        resetForm();
+    }
+
+    function resetForm() {
+        editingId = null;
+        fuelForm.reset();
+        setDefaultDate();
+
+        // Reset radio defaults
+        const petrolRadio = $('input[name="fuelType"][value="Petrol"]');
+        const carRadio = $('input[name="vehicleType"][value="Car"]');
+        if (petrolRadio) petrolRadio.checked = true;
+        if (carRadio) carRadio.checked = true;
+
+        priceInput.value = '102';
+        priceUnitLabel.textContent = '₹/L';
+        estUnitLabel.textContent = 'km/L';
+
+        formHeadingText.textContent = 'Log Fuel Entry';
+        formIconEl.textContent = 'add_circle';
+        submitBtnText.textContent = 'Save Entry';
+        cancelEditBtn.classList.add('hidden');
+
+        liveMileage.textContent = '--';
+        liveMileage.classList.remove('text-secondary');
+        liveMileage.classList.add('text-primary');
+        liveCostPerKm.textContent = '--';
+    }
+
+    // ─── Delete ───
+    async function deleteEntry(id) {
+        showConfirm('Delete this fuel entry?', async () => {
+            entries = entries.filter(en => en.id !== id);
+            if (useIndexedDB) {
+                try { await deleteEntryDB(id); } catch { /* ignore */ }
+            }
+            saveToLocalStorage();
+            showToast('🗑️ Entry deleted');
+            render();
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  RENDER
+    // ═══════════════════════════════════════════════════════
+    function render() {
+        updateStats();
+        renderHistory();
+        updateDataPage();
+    }
+
+    function updateStats() {
+        const totalKm    = entries.reduce((s, e) => s + e.km, 0);
+        const totalSpent = entries.reduce((s, e) => s + e.spent, 0);
+        const totalQty   = entries.reduce((s, e) => s + (e.qty || 0), 0);
+        const overallAvg = totalQty > 0 ? (totalKm / totalQty).toFixed(1) : '—';
+
+        // This month
+        const now = new Date();
+        const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const monthSpent = entries
+            .filter(e => e.date && e.date.startsWith(monthStr))
+            .reduce((s, e) => s + e.spent, 0);
+
+        statTotalKm.textContent      = formatNumber(totalKm);
+        statTotalEntries.textContent = entries.length;
+        statTotalSpent.textContent   = formatNumber(totalSpent);
+        statOverallAvg.textContent   = overallAvg;
+        statMonthSpent.textContent   = formatNumber(monthSpent);
+        totalLogsCounter.textContent = entries.length;
+
+        // Progress bars (decorative, proportional)
+        const maxKm = Math.max(totalKm, 1);
+        barKm.style.width      = `${Math.min((totalKm / 50000) * 100, 100)}%`;
+        barEntries.style.width  = `${Math.min((entries.length / 100) * 100, 100)}%`;
+        barAvg.style.width      = overallAvg !== '—' ? `${Math.min((parseFloat(overallAvg) / 50) * 100, 100)}%` : '0%';
+        barMonth.style.width    = `${Math.min((monthSpent / 10000) * 100, 100)}%`;
+    }
+
+    function renderHistory() {
+        const searchTerm = historySearch ? historySearch.value.toLowerCase().trim() : '';
+
+        let filtered = [...entries];
+
+        // Apply filter
+        if (activeFilter !== 'All') {
+            filtered = filtered.filter(e =>
+                e.fuelType === activeFilter || e.vehicleType === activeFilter
+            );
+        }
+
+        // Apply search
+        if (searchTerm) {
+            filtered = filtered.filter(e =>
+                e.fuelType.toLowerCase().includes(searchTerm) ||
+                e.vehicleType.toLowerCase().includes(searchTerm) ||
+                e.date.includes(searchTerm) ||
+                String(e.km).includes(searchTerm) ||
+                String(e.spent).includes(searchTerm)
+            );
+        }
+
+        // Sort latest first
+        filtered.sort((a, b) => {
+            const dc = b.date.localeCompare(a.date);
+            return dc !== 0 ? dc : b.createdAt - a.createdAt;
+        });
+
+        // Show/hide states
+        if (filtered.length === 0) {
+            historyEmpty.classList.remove('hidden');
+            historyEmpty.classList.add('flex');
+            historyList.classList.add('hidden');
+            historyList.classList.remove('grid');
+        } else {
+            historyEmpty.classList.add('hidden');
+            historyEmpty.classList.remove('flex');
+            historyList.classList.remove('hidden');
+            historyList.classList.add('grid');
+        }
+
+        // Clear & rebuild
+        historyList.innerHTML = '';
+
+        filtered.forEach((entry, index) => {
+            const clone = cardTemplate.content.cloneNode(true);
+            const card = clone.querySelector('.history-card');
+
+            // Stagger animation
+            card.style.animationDelay = `${index * 50}ms`;
+            card.classList.add('animate-fade-in-up');
+
+            // Populate data
+            clone.querySelector('.log-date').textContent = formatDatePretty(entry.date);
+            clone.querySelector('.log-time').textContent = entry.date;
+            clone.querySelector('.log-km').textContent = entry.km;
+            clone.querySelector('.log-spent').textContent = formatNumber(entry.spent);
+            clone.querySelector('.log-price').textContent = entry.price ? entry.price.toFixed(2) : '—';
+            clone.querySelector('.log-price-unit').textContent = entry.fuelType === 'CNG' ? '/kg' : '/L';
+            clone.querySelector('.log-cost-km').textContent = entry.costPerKm ? entry.costPerKm.toFixed(2) : '—';
+            clone.querySelector('.log-mileage').textContent = `${entry.mileage || '—'} ${entry.unit || 'km/L'}`;
+            clone.querySelector('.log-fuel-badge').textContent = entry.fuelType;
+            clone.querySelector('.log-vehicle-badge').textContent = `${entry.vehicleType === 'Car' ? '🚗' : '🏍️'} ${entry.vehicleType}`;
+
+            // High-efficiency highlight
+            if (entry.mileage && entry.mileage > 25) {
+                const bar = clone.querySelector('.card-bar');
+                bar.classList.add('from-green-400', 'to-green-600');
+                bar.classList.remove('from-primary', 'to-secondary');
+            }
+
+            // Edit handler
+            clone.querySelector('.edit-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                startEdit(entry.id);
+            });
+
+            // Delete handler
+            clone.querySelector('.delete-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteEntry(entry.id);
+            });
+
+            historyList.appendChild(clone);
+        });
+    }
+
+    function updateDataPage() {
+        if (dataEntryCount) dataEntryCount.textContent = entries.length;
+        if (dataStorageType) dataStorageType.textContent = useIndexedDB ? 'IndexedDB' : 'localStorage';
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  EXPORT / IMPORT
+    // ═══════════════════════════════════════════════════════
+    function exportJSON() {
+        if (entries.length === 0) { showToast('⚠️ No data to export'); return; }
+        const blob = new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json' });
+        downloadBlob(blob, `fuel-tracker-${todayStr()}.json`);
+        showToast('📥 Exported as JSON');
+    }
+
+    function exportCSV() {
+        if (entries.length === 0) { showToast('⚠️ No data to export'); return; }
+        const headers = ['Date', 'Fuel Type', 'Vehicle Type', 'KM', 'Fuel Price', 'Amount Spent', 'Quantity', 'Mileage', 'Unit', 'Cost/km'];
+        const rows = entries.map(e => [
+            e.date, e.fuelType, e.vehicleType, e.km, e.price,
+            e.spent, e.qty, e.mileage, e.unit, e.costPerKm
+        ]);
+        const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        downloadBlob(blob, `fuel-tracker-${todayStr()}.csv`);
+        showToast('📄 Exported as CSV');
+    }
+
+    async function handleImport(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (!Array.isArray(data)) throw new Error('Invalid format');
+
+            const valid = data.filter(d =>
+                d.fuelType && d.vehicleType && typeof d.km === 'number' && d.date
+            );
+            if (valid.length === 0) throw new Error('No valid entries found');
+
+            for (const entry of valid) {
+                if (!entry.id) entry.id = generateId();
+                // Ensure all fields exist
+                if (!entry.price && entry.spent && entry.qty) entry.price = +(entry.spent / entry.qty).toFixed(2);
+                if (!entry.qty && entry.price && entry.spent) entry.qty = +(entry.spent / entry.price).toFixed(3);
+                if (!entry.mileage && entry.km && entry.qty) entry.mileage = +(entry.km / entry.qty).toFixed(2);
+                if (!entry.costPerKm && entry.km && entry.spent) entry.costPerKm = +(entry.spent / entry.km).toFixed(2);
+                if (!entry.unit) entry.unit = entry.fuelType === 'CNG' ? 'km/kg' : 'km/L';
+                if (!entry.createdAt) entry.createdAt = Date.now();
+                entry.updatedAt = Date.now();
+
+                const idx = entries.findIndex(en => en.id === entry.id);
+                if (idx !== -1) entries[idx] = entry;
+                else entries.push(entry);
+
+                if (useIndexedDB) { try { await putEntry(entry); } catch {} }
+            }
+
+            saveToLocalStorage();
+            render();
+            showToast(`📤 Imported ${valid.length} entries`);
+        } catch (err) {
+            showToast(`❌ Import failed: ${err.message}`);
+        }
+
+        importFile.value = '';
+    }
+
+    function handleClear() {
+        if (entries.length === 0) { showToast('Already empty'); return; }
+        showConfirm('⚠️ Delete ALL entries? This cannot be undone.', async () => {
+            entries = [];
+            if (useIndexedDB) { try { await clearDB(); } catch {} }
+            saveToLocalStorage();
+            render();
+            resetForm();
+            showToast('🗑️ All data cleared');
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  SERVICE WORKER
+    // ═══════════════════════════════════════════════════════
+    function registerServiceWorker() {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('service-worker.js').catch(() => {});
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  UTILITIES
+    // ═══════════════════════════════════════════════════════
+    function generateId() {
+        return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    }
+
+    function formatDatePretty(dateStr) {
+        try {
+            const d = new Date(dateStr + 'T00:00:00');
+            return d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' });
+        } catch { return dateStr; }
+    }
+
+    function formatNumber(n) {
+        if (typeof n !== 'number' || isNaN(n)) return '0';
+        return n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    }
+
+    function todayStr() {
+        return new Date().toISOString().slice(0, 10);
+    }
+
+    function downloadBlob(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+    }
+
+    // ─── Toast ───
+    let toastTimer;
+    function showToast(msg) {
+        toastEl.textContent = msg;
+        toastEl.classList.add('toast-show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toastEl.classList.remove('toast-show'), 2800);
+    }
+
+    // ─── Confirm dialog ───
+    function showConfirm(message, onConfirm) {
+        confirmMessage.textContent = message;
+        confirmOverlay.classList.remove('hidden');
+        confirmYes.onclick = () => {
+            confirmOverlay.classList.add('hidden');
+            onConfirm();
+        };
+    }
+
+    // ─── Public API for inline events ───
+    window.FuelApp = { edit: startEdit, delete: deleteEntry };
+
+    // ─── Go ───
+    init();
+})();

@@ -1,0 +1,118 @@
+/* ═══════════════════════════════════════════════════════
+   Fuel Tracker — Custom Styles (beyond Tailwind)
+   ═══════════════════════════════════════════════════════ */
+
+/* ─── Scrollbar hide ─── */
+::-webkit-scrollbar { display: none; }
+body { -ms-overflow-style: none; scrollbar-width: none; overscroll-behavior: none; }
+
+/* ─── Smooth base ─── */
+html { scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }
+main > :first-child { margin-top: 0 !important; }
+main > :last-child { margin-bottom: 0 !important; }
+
+/* ═══════ Navigation Active States ═══════ */
+
+/* Sidebar nav links */
+.nav-link {
+    color: #434654; /* on-surface-variant */
+}
+.nav-link:hover {
+    background-color: #e6e8ea; /* surface-container-high */
+}
+.nav-link.active {
+    background-color: #003d9b; /* primary */
+    color: #ffffff; /* on-primary */
+    font-weight: 600;
+}
+
+/* Bottom nav links */
+.bottom-nav-link {
+    color: #434654; /* on-surface-variant */
+}
+.bottom-nav-link.active {
+    color: #003d9b; /* primary */
+    font-weight: 700;
+}
+
+/* ═══════ Filter Pills ═══════ */
+.filter-pill {
+    background-color: #eceef0; /* surface-container */
+    color: #434654; /* on-surface-variant */
+    transition: all 0.2s ease;
+}
+.filter-pill:hover {
+    background-color: #e6e8ea; /* surface-container-high */
+}
+.filter-pill.active {
+    background-color: #003d9b; /* primary */
+    color: #ffffff; /* on-primary */
+    box-shadow: 0 1px 3px rgba(0, 61, 155, 0.25);
+}
+
+/* ═══════ Toast ═══════ */
+.toast-show {
+    opacity: 1 !important;
+    transform: translateX(-50%) translateY(0) !important;
+}
+
+/* ═══════ Animations ═══════ */
+@keyframes fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+@keyframes scale-in {
+    from { opacity: 0; transform: scale(0.92); }
+    to   { opacity: 1; transform: scale(1); }
+}
+@keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slide-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in      { animation: fade-in 0.2s ease; }
+.animate-scale-in     { animation: scale-in 0.25s ease; }
+.animate-fade-in-up   { animation: fade-in-up 0.5s ease forwards; opacity: 0; }
+.animate-slide-in     { animation: slide-in 0.4s ease forwards; }
+
+/* ═══════ Page transitions ═══════ */
+.page-section {
+    animation: slide-in 0.35s ease;
+}
+
+/* ═══════ History card action buttons — always visible on mobile ═══════ */
+@media (max-width: 768px) {
+    .history-card .group-hover\:opacity-100 {
+        opacity: 1 !important;
+    }
+    /* Also make the whole "row-actions" visible */
+    .history-card [class*="opacity-0"] {
+        opacity: 1 !important;
+    }
+}
+
+/* ═══════ Form radio pill animation ═══════ */
+input[type="radio"]:checked + div {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ═══════ Number input hide spin buttons ═══════ */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+input[type="number"] {
+    -moz-appearance: textfield;
+}
+
+/* ═══════ Print styles ═══════ */
+@media print {
+    aside, header, nav, .toast, #confirmOverlay { display: none !important; }
+    .lg\:pl-64 { padding-left: 0 !important; }
+    main { padding: 0 !important; }
+}

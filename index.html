@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Track your fuel consumption, mileage and expenses for Petrol and CNG vehicles. Works offline as a PWA.">
+    <meta name="theme-color" content="#f7f9fb">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>Fuel Tracker — Mileage &amp; Expense Logger</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/svg+xml" href="icons/favicon.svg">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+    tailwind.config = {
+        theme: {
+            extend: {
+                colors: {
+                    "on-surface-variant": "#434654",
+                    "outline-variant": "#c3c6d6",
+                    "inverse-surface": "#2d3133",
+                    "on-error": "#ffffff",
+                    "primary": "#003d9b",
+                    "surface-bright": "#f7f9fb",
+                    "surface-variant": "#e0e3e5",
+                    "on-primary": "#ffffff",
+                    "primary-fixed-dim": "#b2c5ff",
+                    "surface-container": "#eceef0",
+                    "on-secondary-container": "#007432",
+                    "on-surface": "#191c1e",
+                    "secondary-container": "#6bff8f",
+                    "primary-container": "#0052cc",
+                    "surface-container-low": "#f2f4f6",
+                    "tertiary-container": "#535a70",
+                    "surface-container-highest": "#e0e3e5",
+                    "inverse-on-surface": "#eff1f3",
+                    "surface-dim": "#d8dadc",
+                    "inverse-primary": "#b2c5ff",
+                    "surface": "#f7f9fb",
+                    "surface-tint": "#0c56d0",
+                    "background": "#f7f9fb",
+                    "on-error-container": "#93000a",
+                    "outline": "#737685",
+                    "on-background": "#191c1e",
+                    "error-container": "#ffdad6",
+                    "surface-container-lowest": "#ffffff",
+                    "on-primary-container": "#c4d2ff",
+                    "primary-fixed": "#dae2ff",
+                    "secondary": "#006e2f",
+                    "on-tertiary-container": "#cbd2ec",
+                    "error": "#ba1a1a",
+                    "on-secondary": "#ffffff",
+                },
+                borderRadius: {
+                    DEFAULT: "0.25rem",
+                    lg: "0.5rem",
+                    xl: "0.75rem",
+                    "2xl": "1rem",
+                    full: "9999px",
+                },
+                spacing: {
+                    gutter: "16px",
+                    sm: "8px",
+                    xs: "4px",
+                    unit: "4px",
+                    lg: "24px",
+                    md: "16px",
+                    "container-margin": "16px",
+                    xl: "32px",
+                },
+                fontFamily: {
+                    sans: ["Inter", "system-ui", "sans-serif"],
+                },
+            },
+        },
+    };
+    </script>
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-background font-sans text-on-surface text-sm">
+
+    <!-- ═══════ Desktop Sidebar ═══════ -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-64 bg-surface-container-low z-50 hidden lg:flex flex-col border-r border-outline-variant/30">
+        <div class="p-lg flex items-center gap-md mb-xl">
+            <span class="text-3xl">⛽</span>
+            <span class="text-xl font-semibold text-primary tracking-tight">Fuel Tracker</span>
+        </div>
+        <nav class="flex-1 px-md flex flex-col gap-xs" id="sidebarNav">
+            <a class="nav-link active flex items-center px-md py-sm rounded-xl transition-colors cursor-pointer" data-page="dashboard">
+                <span class="material-symbols-outlined mr-md">home</span>
+                <span class="text-xs font-semibold tracking-wider uppercase">Dashboard</span>
+            </a>
+            <a class="nav-link flex items-center px-md py-sm rounded-xl transition-colors cursor-pointer" data-page="history">
+                <span class="material-symbols-outlined mr-md">list</span>
+                <span class="text-xs font-semibold tracking-wider uppercase">History</span>
+            </a>
+            <a class="nav-link flex items-center px-md py-sm rounded-xl transition-colors cursor-pointer" data-page="data">
+                <span class="material-symbols-outlined mr-md">settings</span>
+                <span class="text-xs font-semibold tracking-wider uppercase">Export / Import</span>
+            </a>
+        </nav>
+        <div class="p-md text-[10px] text-outline uppercase tracking-wider text-center">
+            v1.0 · PWA · Offline Ready
+        </div>
+    </aside>
+
+    <!-- ═══════ Main Content Area ═══════ -->
+    <div class="lg:pl-64 min-h-screen flex flex-col">
+
+        <!-- ─── Top Header ─── -->
+        <header class="fixed top-0 left-0 right-0 lg:left-64 h-16 bg-surface/80 backdrop-blur-xl z-40 shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
+            <div class="h-16 w-full px-md lg:px-lg flex items-center justify-between">
+                <div class="flex items-center gap-md lg:hidden">
+                    <span class="text-2xl">⛽</span>
+                    <span class="text-lg font-semibold text-primary">Fuel Tracker</span>
+                </div>
+                <div class="flex-1"></div>
+                <div class="flex items-center gap-sm">
+                    <span id="headerPageTitle" class="hidden lg:inline text-sm font-semibold text-on-surface-variant uppercase tracking-widest"></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- ═══════ PAGES ═══════ -->
+        <main class="flex-1 pt-16 pb-24 lg:pb-lg w-full max-w-screen-xl mx-auto px-md lg:px-lg">
+
+            <!-- ═══════ PAGE: DASHBOARD ═══════ -->
+            <section id="page-dashboard" class="page-section flex flex-col w-full gap-xl">
+                <!-- Page Header -->
+                <div class="flex items-center justify-between pt-lg">
+                    <h1 class="text-2xl font-semibold tracking-tight text-on-surface">Dashboard</h1>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-md w-full" id="statsGrid">
+                    <div class="bg-surface-container rounded-xl p-lg shadow-sm flex flex-col gap-sm relative overflow-hidden group hover:shadow-md transition-shadow">
+                        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-primary/5 rounded-full blur-xl group-hover:bg-primary/10 transition-colors"></div>
+                        <div class="flex items-center gap-xs text-on-surface-variant mb-xs">
+                            <span class="material-symbols-outlined text-[18px]">route</span>
+                            <span class="text-[11px] font-semibold uppercase tracking-wider">Total Distance</span>
+                        </div>
+                        <div class="flex items-baseline gap-xs">
+                            <span class="text-3xl font-bold text-on-surface tracking-tight" id="stat-total-km">0</span>
+                            <span class="text-sm text-on-surface-variant">km</span>
+                        </div>
+                        <div class="w-full h-1 bg-surface-variant mt-2 rounded-full overflow-hidden">
+                            <div class="h-full bg-primary rounded-full transition-all duration-700" id="bar-km" style="width:0%"></div>
+                        </div>
+                    </div>
+                    <div class="bg-surface-container rounded-xl p-lg shadow-sm flex flex-col gap-sm relative overflow-hidden group hover:shadow-md transition-shadow">
+                        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-secondary/5 rounded-full blur-xl group-hover:bg-secondary/10 transition-colors"></div>
+                        <div class="flex items-center gap-xs text-on-surface-variant mb-xs">
+                            <span class="material-symbols-outlined text-[18px]">local_gas_station</span>
+                            <span class="text-[11px] font-semibold uppercase tracking-wider">Fuel Entries</span>
+                        </div>
+                        <div class="flex items-baseline gap-xs">
+                            <span class="text-3xl font-bold text-on-surface tracking-tight" id="stat-total-entries">0</span>
+                            <span class="text-sm text-on-surface-variant">entries</span>
+                        </div>
+                        <div class="w-full h-1 bg-surface-variant mt-2 rounded-full overflow-hidden">
+                            <div class="h-full bg-secondary rounded-full transition-all duration-700" id="bar-entries" style="width:0%"></div>
+                        </div>
+                    </div>
+                    <div class="bg-primary rounded-xl p-lg shadow-sm flex flex-col gap-sm relative overflow-hidden group hover:shadow-md transition-shadow text-on-primary">
+                        <div class="absolute -right-4 -top-4 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-colors"></div>
+                        <div class="flex items-center gap-xs text-on-primary/80 mb-xs">
+                            <span class="material-symbols-outlined text-[18px]">payments</span>
+                            <span class="text-[11px] font-semibold uppercase tracking-wider">Total Spent</span>
+                        </div>
+                        <div class="flex items-baseline gap-xs">
+                            <span class="text-sm text-on-primary/80">₹</span>
+                            <span class="text-3xl font-bold tracking-tight" id="stat-total-spent">0</span>
+                        </div>
+                        <div class="mt-auto pt-2 flex items-center justify-between text-on-primary/70 text-[10px] font-semibold">
+                            <span>All Time</span>
+                        </div>
+                    </div>
+                    <div class="bg-surface-container rounded-xl p-lg shadow-sm flex flex-col gap-sm relative overflow-hidden group hover:shadow-md transition-shadow">
+                        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-primary/5 rounded-full blur-xl group-hover:bg-primary/10 transition-colors"></div>
+                        <div class="flex items-center gap-xs text-on-surface-variant mb-xs">
+                            <span class="material-symbols-outlined text-[18px]">speed</span>
+                            <span class="text-[11px] font-semibold uppercase tracking-wider">Overall Avg</span>
+                        </div>
+                        <div class="flex items-baseline gap-xs">
+                            <span class="text-3xl font-bold text-secondary tracking-tight" id="stat-overall-avg">—</span>
+                            <span class="text-sm text-on-surface-variant" id="stat-avg-unit">km/L</span>
+                        </div>
+                        <div class="w-full h-1 bg-surface-variant mt-2 rounded-full overflow-hidden">
+                            <div class="h-full bg-gradient-to-r from-primary to-secondary rounded-full transition-all duration-700" id="bar-avg" style="width:0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Form + Tip Side Panel -->
+                <div class="flex flex-col lg:flex-row gap-lg w-full items-start">
+                    <!-- Entry Form -->
+                    <div class="w-full lg:w-2/3 bg-surface-container-lowest rounded-2xl p-lg shadow-md relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-50 pointer-events-none"></div>
+                        <div class="flex items-center gap-md mb-lg">
+                            <div class="w-10 h-10 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center">
+                                <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;" id="formIconEl">add_circle</span>
+                            </div>
+                            <h2 class="text-xl font-semibold text-on-surface" id="formHeadingText">Log Fuel Entry</h2>
+                        </div>
+                        <form class="flex flex-col gap-lg relative z-10" id="fuelForm" autocomplete="off">
+                            <input type="hidden" id="editId" value="">
+                            <!-- Fuel & Vehicle Type -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+                                <div class="flex flex-col gap-xs">
+                                    <label class="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Fuel Type</label>
+                                    <div class="flex gap-sm">
+                                        <label class="flex-1 cursor-pointer">
+                                            <input type="radio" name="fuelType" value="Petrol" checked class="peer sr-only">
+                                            <div class="px-md py-sm rounded-lg bg-surface-container text-center text-sm text-on-surface-variant peer-checked:bg-primary-container peer-checked:text-on-primary-container peer-checked:shadow-sm transition-all font-medium">Petrol</div>
+                                        </label>
+                                        <label class="flex-1 cursor-pointer">
+                                            <input type="radio" name="fuelType" value="CNG" class="peer sr-only">
+                                            <div class="px-md py-sm rounded-lg bg-surface-container text-center text-sm text-on-surface-variant peer-checked:bg-primary-container peer-checked:text-on-primary-container peer-checked:shadow-sm transition-all font-medium">CNG</div>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="flex flex-col gap-xs">
+                                    <label class="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Vehicle Type</label>
+                                    <div class="flex gap-sm">
+                                        <label class="flex-1 cursor-pointer">
+                                            <input type="radio" name="vehicleType" value="Car" checked class="peer sr-only">
+                                            <div class="px-md py-sm rounded-lg bg-surface-container text-center text-sm text-on-surface-variant peer-checked:bg-secondary-container peer-checked:text-on-secondary-container peer-checked:shadow-sm transition-all font-medium flex items-center justify-center gap-xs">
+                                                <span class="material-symbols-outlined text-[18px]">directions_car</span> Car
+                                            </div>
+                                        </label>
+                                        <label class="flex-1 cursor-pointer">
+                                            <input type="radio" name="vehicleType" value="Bike" class="peer sr-only">
+                                            <div class="px-md py-sm rounded-lg bg-surface-container text-center text-sm text-on-surface-variant peer-checked:bg-secondary-container peer-checked:text-on-secondary-container peer-checked:shadow-sm transition-all font-medium flex items-center justify-center gap-xs">
+                                                <span class="material-symbols-outlined text-[18px]">two_wheeler</span> Bike
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Numeric Inputs -->
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-md">
+                                <div class="flex flex-col gap-xs">
+                                    <label class="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider" for="kmDriven">Distance Driven (km)</label>
+                                    <input class="w-full bg-surface-container-low text-on-surface text-base px-md py-sm rounded-lg outline-none focus:ring-2 focus:ring-primary/50 transition-shadow border-b border-outline-variant" id="kmDriven" type="number" min="0" step="0.1" placeholder="0.0" required>
+                                </div>
+                                <div class="flex flex-col gap-xs">
+                                    <label class="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider" for="fuelPrice">Fuel Price (<span id="fuel-price-unit-label">₹/L</span>)</label>
+                                    <div class="relative">
+                                        <span class="absolute left-md top-1/2 -translate-y-1/2 text-on-surface-variant">₹</span>
+                                        <input class="w-full bg-surface-container-low text-on-surface text-base pl-xl pr-md py-sm rounded-lg outline-none focus:ring-2 focus:ring-primary/50 transition-shadow border-b border-outline-variant" id="fuelPrice" type="number" min="0.1" step="0.01" placeholder="102.00" value="102" required>
+                                    </div>
+                                </div>
+                                <div class="flex flex-col gap-xs">
+                                    <label class="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider" for="amountSpent">Amount Spent</label>
+                                    <div class="relative">
+                                        <span class="absolute left-md top-1/2 -translate-y-1/2 text-on-surface-variant">₹</span>
+                                        <input class="w-full bg-surface-container-low text-on-surface text-base pl-xl pr-md py-sm rounded-lg outline-none focus:ring-2 focus:ring-primary/50 transition-shadow border-b border-outline-variant" id="amountSpent" type="number" min="0" step="0.01" placeholder="0.00" required>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Date -->
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-md">
+                                <div class="flex flex-col gap-xs">
+                                    <label class="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider" for="entryDate">Date</label>
+                                    <input class="w-full bg-surface-container-low text-on-surface text-base px-md py-sm rounded-lg outline-none focus:ring-2 focus:ring-primary/50 transition-shadow border-b border-outline-variant" id="entryDate" type="date" required>
+                                </div>
+                            </div>
+
+                            <!-- Live Estimation Bar -->
+                            <div class="flex flex-col sm:flex-row items-center justify-between gap-md bg-surface-container-low p-md rounded-xl">
+                                <div class="flex flex-col gap-sm w-full sm:w-auto">
+                                    <div class="flex items-center gap-sm">
+                                        <span class="material-symbols-outlined text-primary text-[18px]">speed</span>
+                                        <span class="text-sm text-on-surface-variant">Est. Mileage:</span>
+                                        <span class="text-xl font-semibold text-primary tracking-tight" id="live-mileage">--</span>
+                                        <span class="text-[11px] font-semibold text-on-surface-variant ml-1" id="est-unit-label">km/L</span>
+                                    </div>
+                                    <div class="flex items-center gap-sm">
+                                        <span class="material-symbols-outlined text-secondary text-[18px]">payments</span>
+                                        <span class="text-sm text-on-surface-variant">Cost per km:</span>
+                                        <span class="text-base font-bold text-secondary tracking-tight" id="live-cost-per-km">--</span>
+                                        <span class="text-[11px] font-semibold text-on-surface-variant ml-1">₹/km</span>
+                                    </div>
+                                </div>
+                                <div class="flex gap-sm w-full sm:w-auto">
+                                    <button type="button" id="cancelEditBtn" class="hidden px-lg py-sm rounded-full bg-surface-container text-on-surface-variant text-xs font-semibold uppercase tracking-wide hover:bg-surface-container-high transition-colors">
+                                        Cancel
+                                    </button>
+                                    <button type="submit" id="submitBtn" class="w-full sm:w-auto bg-primary text-on-primary text-xs font-semibold px-xl py-sm rounded-full shadow-md hover:shadow-lg hover:-translate-y-[1px] transition-all flex items-center justify-center gap-sm uppercase tracking-wide">
+                                        <span class="material-symbols-outlined text-[18px]">save</span>
+                                        <span id="submitBtnText">Save Entry</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Side Tip Card -->
+                    <div class="w-full lg:w-1/3 flex flex-col gap-md">
+                        <div class="bg-surface-container rounded-2xl shadow-sm overflow-hidden">
+                            <div class="bg-gradient-to-br from-primary-container to-primary p-lg flex flex-col gap-sm text-on-primary-container">
+                                <span class="material-symbols-outlined text-3xl opacity-60">eco</span>
+                                <span class="text-[11px] font-semibold uppercase tracking-widest opacity-70">Efficiency Tip</span>
+                                <p class="text-sm leading-relaxed">Maintaining a steady speed on highways can improve your fuel economy by up to <strong>15%</strong>.</p>
+                            </div>
+                            <div class="p-md flex items-center gap-xs text-secondary">
+                                <span class="material-symbols-outlined text-[14px]">eco</span>
+                                <span class="text-[10px] font-semibold uppercase tracking-wider">Eco Drive</span>
+                            </div>
+                        </div>
+                        <!-- Quick Stats Mini -->
+                        <div class="bg-surface-container rounded-2xl p-lg shadow-sm">
+                            <span class="text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">This Month</span>
+                            <div class="flex items-baseline gap-xs mt-sm">
+                                <span class="text-sm text-on-surface-variant">₹</span>
+                                <span class="text-3xl font-bold text-on-surface tracking-tight" id="stat-month-spent">0</span>
+                            </div>
+                            <div class="w-full h-1 bg-surface-variant mt-3 rounded-full overflow-hidden">
+                                <div class="h-full bg-gradient-to-r from-primary to-secondary rounded-full transition-all duration-700" id="bar-month" style="width:0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ═══════ PAGE: HISTORY ═══════ -->
+            <section id="page-history" class="page-section hidden flex flex-col w-full relative">
+                <!-- Header -->
+                <header class="relative pt-lg pb-md flex flex-col md:flex-row md:items-end justify-between gap-lg overflow-hidden">
+                    <div class="relative z-10 flex flex-col gap-xs max-w-2xl pl-lg md:pl-xl border-l-4 border-primary">
+                        <h1 class="text-2xl font-bold text-on-surface">Fuel History</h1>
+                        <p class="text-base text-on-surface-variant max-w-md">Review your refuel logs, track efficiency over time, and manage your data.</p>
+                    </div>
+                    <div class="relative z-10 flex gap-md items-center">
+                        <div class="flex flex-col items-end">
+                            <span class="text-[11px] font-semibold text-on-surface-variant uppercase tracking-widest">Total Logs</span>
+                            <span class="text-3xl font-bold text-primary" id="total-logs-counter">0</span>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Filter Bar -->
+                <div class="pb-md flex flex-wrap gap-sm items-center justify-between sticky top-16 z-30 bg-background/80 backdrop-blur-xl border-b border-outline-variant/20 py-sm">
+                    <div class="flex gap-sm overflow-x-auto pb-2 md:pb-0 w-full md:w-auto" id="historyFilters">
+                        <button class="filter-pill active px-md py-sm rounded-full text-xs font-semibold whitespace-nowrap shadow-sm" data-filter="All">All</button>
+                        <button class="filter-pill px-md py-sm rounded-full text-xs font-semibold whitespace-nowrap" data-filter="Petrol">⛽ Petrol</button>
+                        <button class="filter-pill px-md py-sm rounded-full text-xs font-semibold whitespace-nowrap" data-filter="CNG">🟢 CNG</button>
+                        <button class="filter-pill px-md py-sm rounded-full text-xs font-semibold whitespace-nowrap" data-filter="Car">🚗 Car</button>
+                        <button class="filter-pill px-md py-sm rounded-full text-xs font-semibold whitespace-nowrap" data-filter="Bike">🏍️ Bike</button>
+                    </div>
+                    <div class="flex items-center gap-sm w-full md:w-auto">
+                        <div class="relative flex-1 md:w-64">
+                            <span class="material-symbols-outlined absolute left-md top-1/2 -translate-y-1/2 text-on-surface-variant/50">search</span>
+                            <input id="historySearch" class="w-full pl-xl pr-md py-sm rounded-full bg-surface-container border-none text-on-surface text-sm focus:ring-2 focus:ring-primary/50 transition-shadow outline-none" placeholder="Search logs..." type="text">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- History Content -->
+                <div class="py-lg min-h-[400px] relative flex flex-col" id="history-container">
+                    <!-- Empty state -->
+                    <div class="flex-1 flex flex-col items-center justify-center py-xl gap-lg max-w-lg mx-auto text-center" id="history-empty-state">
+                        <div class="relative w-32 h-32 mb-md">
+                            <div class="absolute inset-0 bg-primary-fixed/20 rounded-full blur-2xl"></div>
+                            <div class="w-full h-full flex items-center justify-center text-7xl relative z-10">🚀</div>
+                        </div>
+                        <h3 class="text-2xl font-semibold text-on-surface">No Refuels Logged Yet</h3>
+                        <p class="text-base text-on-surface-variant">Your history is currently empty. Start tracking your fuel stops to see efficiency metrics here.</p>
+                        <button type="button" id="emptyAddBtn" class="mt-sm px-xl py-md rounded-xl bg-surface-container-high text-primary text-sm font-semibold shadow-sm hover:shadow-md transition-shadow flex items-center gap-sm">
+                            <span class="material-symbols-outlined">add_circle</span>
+                            Add First Entry
+                        </button>
+                    </div>
+                    <!-- Card Grid -->
+                    <div class="hidden grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-md lg:gap-lg auto-rows-max w-full" id="history-list"></div>
+                </div>
+            </section>
+
+            <!-- ═══════ PAGE: DATA MANAGEMENT ═══════ -->
+            <section id="page-data" class="page-section hidden flex flex-col w-full gap-xl">
+                <div class="flex items-center justify-between pt-lg">
+                    <h1 class="text-2xl font-semibold tracking-tight text-on-surface">Data Management</h1>
+                </div>
+
+                <!-- Export/Import Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-lg">
+                    <!-- Export -->
+                    <div class="bg-surface-container-lowest rounded-2xl p-lg shadow-md flex flex-col gap-lg">
+                        <div class="flex items-center gap-md">
+                            <div class="w-10 h-10 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center">
+                                <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">download</span>
+                            </div>
+                            <h2 class="text-xl font-semibold text-on-surface">Export Data</h2>
+                        </div>
+                        <p class="text-sm text-on-surface-variant">Download your fuel history as a backup file. Use JSON for importing back later, or CSV for spreadsheets.</p>
+                        <div class="flex flex-col sm:flex-row gap-sm">
+                            <button id="exportJsonBtn" class="flex-1 flex items-center justify-center gap-sm px-lg py-md rounded-xl bg-primary text-on-primary text-xs font-semibold uppercase tracking-wide shadow-md hover:shadow-lg hover:-translate-y-[1px] transition-all">
+                                <span class="material-symbols-outlined text-[18px]">data_object</span>
+                                Export JSON
+                            </button>
+                            <button id="exportCsvBtn" class="flex-1 flex items-center justify-center gap-sm px-lg py-md rounded-xl bg-surface-container text-on-surface-variant text-xs font-semibold uppercase tracking-wide hover:bg-surface-container-high transition-colors">
+                                <span class="material-symbols-outlined text-[18px]">table_chart</span>
+                                Export CSV
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Import -->
+                    <div class="bg-surface-container-lowest rounded-2xl p-lg shadow-md flex flex-col gap-lg">
+                        <div class="flex items-center gap-md">
+                            <div class="w-10 h-10 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center">
+                                <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">upload</span>
+                            </div>
+                            <h2 class="text-xl font-semibold text-on-surface">Import Data</h2>
+                        </div>
+                        <p class="text-sm text-on-surface-variant">Restore your fuel history from a previously exported JSON file. New entries will be merged with existing data.</p>
+                        <label class="flex items-center justify-center gap-sm px-lg py-md rounded-xl bg-secondary text-on-secondary text-xs font-semibold uppercase tracking-wide shadow-md hover:shadow-lg hover:-translate-y-[1px] transition-all cursor-pointer" for="importFile">
+                            <span class="material-symbols-outlined text-[18px]">upload_file</span>
+                            Import JSON File
+                            <input type="file" id="importFile" accept=".json" hidden>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Data Info + Danger Zone -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-lg">
+                    <div class="bg-surface-container rounded-2xl p-lg shadow-sm flex flex-col gap-md">
+                        <h3 class="text-lg font-semibold text-on-surface flex items-center gap-sm">
+                            <span class="material-symbols-outlined text-[20px]">info</span>
+                            Storage Info
+                        </h3>
+                        <div class="grid grid-cols-2 gap-md text-sm">
+                            <div class="flex flex-col">
+                                <span class="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Entries</span>
+                                <span class="text-lg font-bold text-on-surface" id="data-entry-count">0</span>
+                            </div>
+                            <div class="flex flex-col">
+                                <span class="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Storage</span>
+                                <span class="text-lg font-bold text-on-surface" id="data-storage-type">IndexedDB</span>
+                            </div>
+                        </div>
+                        <p class="text-xs text-on-surface-variant">All data is stored locally on your device. Nothing is sent to any server.</p>
+                    </div>
+
+                    <div class="bg-error-container/30 rounded-2xl p-lg shadow-sm flex flex-col gap-md border border-error/10">
+                        <h3 class="text-lg font-semibold text-error flex items-center gap-sm">
+                            <span class="material-symbols-outlined text-[20px]">warning</span>
+                            Danger Zone
+                        </h3>
+                        <p class="text-sm text-on-surface-variant">Permanently delete all your fuel history data. This action cannot be undone.</p>
+                        <button id="clearBtn" class="flex items-center justify-center gap-sm px-lg py-md rounded-xl bg-error text-on-error text-xs font-semibold uppercase tracking-wide shadow-md hover:shadow-lg hover:-translate-y-[1px] transition-all w-fit">
+                            <span class="material-symbols-outlined text-[18px]">delete_forever</span>
+                            Clear All Data
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- ─── Mobile Bottom Nav ─── -->
+        <nav class="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-surface border-t border-outline-variant/30 flex items-center justify-around px-md z-50" id="bottomNav">
+            <a class="bottom-nav-link active flex flex-col items-center gap-xs transition-colors cursor-pointer" data-page="dashboard">
+                <span class="material-symbols-outlined">home</span>
+                <span class="text-[10px] font-semibold">Home</span>
+            </a>
+            <a class="bottom-nav-link flex flex-col items-center gap-xs transition-colors cursor-pointer" data-page="history">
+                <span class="material-symbols-outlined">list</span>
+                <span class="text-[10px] font-semibold">History</span>
+            </a>
+            <a class="bottom-nav-link flex flex-col items-center gap-xs transition-colors cursor-pointer" data-page="data">
+                <span class="material-symbols-outlined">settings</span>
+                <span class="text-[10px] font-semibold">Data</span>
+            </a>
+        </nav>
+    </div>
+
+    <!-- ═══════ Toast ═══════ -->
+    <div id="toast" class="fixed bottom-20 lg:bottom-8 left-1/2 -translate-x-1/2 translate-y-24 opacity-0 bg-inverse-surface text-inverse-on-surface px-lg py-md rounded-xl shadow-lg z-[999] text-sm font-medium transition-all duration-300 pointer-events-none whitespace-nowrap"></div>
+
+    <!-- ═══════ Confirm Dialog ═══════ -->
+    <div id="confirmOverlay" class="hidden fixed inset-0 bg-black/50 z-[500] flex items-center justify-center backdrop-blur-sm animate-fade-in">
+        <div class="bg-surface-container-lowest rounded-2xl p-lg shadow-xl max-w-sm w-[90%] animate-scale-in">
+            <p id="confirmMessage" class="text-base font-medium text-on-surface mb-lg text-center">Are you sure?</p>
+            <div class="flex gap-sm justify-center">
+                <button id="confirmNo" class="px-xl py-sm rounded-full bg-surface-container text-on-surface-variant text-xs font-semibold uppercase tracking-wide hover:bg-surface-container-high transition-colors">Cancel</button>
+                <button id="confirmYes" class="px-xl py-sm rounded-full bg-error text-on-error text-xs font-semibold uppercase tracking-wide shadow-md hover:shadow-lg transition-all">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════ History Card Template ═══════ -->
+    <template id="log-card-template">
+        <div class="history-card group relative bg-surface-container-lowest rounded-2xl p-md lg:p-lg flex flex-col gap-md shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 overflow-hidden border border-outline-variant/10">
+            <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-secondary opacity-50 card-bar"></div>
+            <div class="flex justify-between items-start">
+                <div class="flex items-center gap-sm">
+                    <div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-primary">
+                        <span class="material-symbols-outlined text-[20px]">local_gas_station</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-base font-semibold text-on-surface log-date">—</span>
+                        <span class="text-[11px] font-semibold text-on-surface-variant log-time">—</span>
+                    </div>
+                </div>
+                <div class="flex gap-xs opacity-0 group-hover:opacity-100 transition-opacity focus-within:opacity-100">
+                    <button class="p-xs rounded-lg hover:bg-surface-container-high text-on-surface-variant hover:text-primary transition-colors edit-btn" aria-label="Edit">
+                        <span class="material-symbols-outlined text-[20px]">edit</span>
+                    </button>
+                    <button class="p-xs rounded-lg hover:bg-error-container text-on-surface-variant hover:text-error transition-colors delete-btn" aria-label="Delete">
+                        <span class="material-symbols-outlined text-[20px]">delete</span>
+                    </button>
+                </div>
+            </div>
+            <div class="w-full h-px bg-outline-variant/20 my-xs"></div>
+            <div class="grid grid-cols-2 gap-y-md gap-x-sm items-end mb-sm">
+                <div class="flex flex-col gap-1">
+                    <span class="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider">Distance</span>
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-xl font-semibold text-on-surface log-km">0</span>
+                        <span class="text-[11px] font-semibold text-on-surface-variant">km</span>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-1 border-l border-outline-variant/20 pl-sm">
+                    <span class="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider">Spent</span>
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-[11px] font-semibold text-on-surface-variant">₹</span>
+                        <span class="text-xl font-semibold text-on-surface log-spent">0</span>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-1 mt-2">
+                    <span class="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider">Fuel Price</span>
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-[11px] font-semibold text-on-surface-variant">₹</span>
+                        <span class="text-base font-semibold text-on-surface log-price">0</span>
+                        <span class="text-[11px] font-semibold text-on-surface-variant log-price-unit">/L</span>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-1 border-l border-outline-variant/20 pl-sm mt-2">
+                    <span class="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider">Cost per KM</span>
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-[11px] font-semibold text-on-surface-variant">₹</span>
+                        <span class="text-base font-semibold text-on-surface log-cost-km">0</span>
+                        <span class="text-[11px] font-semibold text-on-surface-variant">/km</span>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-auto pt-sm flex justify-between items-center bg-surface-container p-sm -mx-sm -mb-sm rounded-xl">
+                <div class="px-3 py-1.5 rounded-lg bg-secondary-container flex items-center gap-1.5 shadow-sm">
+                    <span class="material-symbols-outlined text-[16px] text-on-secondary-container">speed</span>
+                    <span class="text-xs font-bold text-on-secondary-container log-mileage">— km/L</span>
+                </div>
+                <div class="flex flex-col items-end gap-1">
+                    <span class="text-[10px] font-semibold bg-primary-container text-on-primary-container px-2 py-0.5 rounded log-fuel-badge">Petrol</span>
+                    <span class="text-[10px] font-semibold text-on-surface-variant log-vehicle-badge">Car</span>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script src="app.js"></script>
+</body>
+</html>
