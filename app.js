@@ -3,13 +3,13 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCVP0l30IPY6YZ8QCd84bs8Eluhm4WS2hU",
-  authDomain: "ritesh-portfolio-b76c9.firebaseapp.com",
-  projectId: "ritesh-portfolio-b76c9",
-  storageBucket: "ritesh-portfolio-b76c9.firebasestorage.app",
-  messagingSenderId: "508723844443",
-  appId: "1:508723844443:web:c9fb6fe3b58fa0b7bb367e",
-  measurementId: "G-K5PY5Q1221"
+  apiKey: "AIzaSyDDI6XzGK9BMwpD6U9e1SMk8QiH9INyo6w",
+  authDomain: "fuel-tracker-d77f5.firebaseapp.com",
+  projectId: "fuel-tracker-d77f5",
+  storageBucket: "fuel-tracker-d77f5.firebasestorage.app",
+  messagingSenderId: "225380767873",
+  appId: "1:225380767873:web:0d5cd443123e16fffa9580",
+  measurementId: "G-811Z91PTSW"
 };
 
 const app = initializeApp(firebaseConfig);
