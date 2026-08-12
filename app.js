@@ -180,8 +180,8 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             if ($('#sidebarLoginIcon')) $('#sidebarLoginIcon').textContent = 'logout';
             if ($('#mobileLoginIcon')) $('#mobileLoginIcon').textContent = 'logout';
         } else {
-            if (sidebarLoginText) sidebarLoginText.textContent = 'Login to Sync';
-            if (mobileLoginText) mobileLoginText.textContent = 'Login';
+            if (sidebarLoginText) sidebarLoginText.textContent = 'Sign in with Google';
+            if (mobileLoginText) mobileLoginText.textContent = 'Google Login';
             if ($('#sidebarLoginIcon')) $('#sidebarLoginIcon').textContent = 'login';
             if ($('#mobileLoginIcon')) $('#mobileLoginIcon').textContent = 'login';
         }
