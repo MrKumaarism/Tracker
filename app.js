@@ -1,11 +1,29 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCVP0l30IPY6YZ8QCd84bs8Eluhm4WS2hU",
+  authDomain: "ritesh-portfolio-b76c9.firebaseapp.com",
+  projectId: "ritesh-portfolio-b76c9",
+  storageBucket: "ritesh-portfolio-b76c9.firebasestorage.app",
+  messagingSenderId: "508723844443",
+  appId: "1:508723844443:web:c9fb6fe3b58fa0b7bb367e",
+  measurementId: "G-K5PY5Q1221"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const dbFirestore = getFirestore(app);
+
+enableIndexedDbPersistence(dbFirestore).catch((err) => {
+    console.warn("Firestore offline persistence error:", err);
+});
+
 /* ═══════════════════════════════════════════════════════
    Fuel Tracker — Application Logic
-   IndexedDB + localStorage | CRUD | Export/Import | PWA
+   Firebase Firestore | CRUD | Export/Import | PWA
    ═══════════════════════════════════════════════════════ */
-
-(() => {
-    'use strict';
-
     // ─── Constants ───
     const DB_NAME = 'FuelTrackerDB';
     const DB_VERSION = 1;
@@ -16,7 +34,9 @@
     let db = null;
     let entries = [];
     let editingId = null;
-    let useIndexedDB = true;
+    let useIndexedDB = false;
+    let currentUser = null;
+    let unsubscribeSnapshot = null;
     let activeFilter = 'All';
 
     // ─── DOM Helpers ───
@@ -77,6 +97,12 @@
     const confirmMessage = $('#confirmMessage');
     const confirmYes     = $('#confirmYes');
     const confirmNo      = $('#confirmNo');
+    
+    // Auth DOM Refs
+    const sidebarLoginBtn = $('#sidebarLoginBtn');
+    const sidebarLoginText = $('#sidebarLoginText');
+    const mobileLoginBtn = $('#mobileLoginBtn');
+    const mobileLoginText = $('#mobileLoginText');
 
     // ═══════════════════════════════════════════════════════
     //  INIT
@@ -87,16 +113,8 @@
         initNavigation();
         registerServiceWorker();
 
-        try {
-            await openDB();
-            entries = await getAllEntries();
-        } catch {
-            useIndexedDB = false;
-            entries = loadFromLocalStorage();
-        }
-
-        migrateEntries();
-        render();
+        // Initialize Firebase Auth which will load data
+        initAuth();
     }
 
     function setDefaultDate() {
@@ -135,57 +153,92 @@
     }
 
     // ═══════════════════════════════════════════════════════
-    //  IndexedDB
     // ═══════════════════════════════════════════════════════
-    function openDB() {
-        return new Promise((resolve, reject) => {
-            if (!window.indexedDB) return reject(new Error('No IndexedDB'));
-            const req = indexedDB.open(DB_NAME, DB_VERSION);
-            req.onupgradeneeded = (e) => {
-                const database = e.target.result;
-                if (!database.objectStoreNames.contains(STORE_NAME)) {
-                    const store = database.createObjectStore(STORE_NAME, { keyPath: 'id' });
-                    store.createIndex('date', 'date', { unique: false });
-                }
-            };
-            req.onsuccess = (e) => { db = e.target.result; resolve(db); };
-            req.onerror = () => reject(req.error);
+    //  FIREBASE FIRESTORE & AUTH
+    // ═══════════════════════════════════════════════════════
+    
+    function initAuth() {
+        onAuthStateChanged(auth, (user) => {
+            currentUser = user;
+            updateAuthUI();
+            if (user) {
+                // Logged in: load from Firestore
+                loadFirestoreData();
+            } else {
+                // Logged out: fallback to local storage
+                if (unsubscribeSnapshot) unsubscribeSnapshot();
+                entries = loadFromLocalStorage();
+                render();
+            }
         });
     }
 
-    function getAllEntries() {
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readonly');
-            const req = tx.objectStore(STORE_NAME).getAll();
-            req.onsuccess = () => resolve(req.result || []);
-            req.onerror = () => reject(req.error);
+    function updateAuthUI() {
+        if (currentUser) {
+            if (sidebarLoginText) sidebarLoginText.textContent = 'Logout';
+            if (mobileLoginText) mobileLoginText.textContent = 'Logout';
+            if ($('#sidebarLoginIcon')) $('#sidebarLoginIcon').textContent = 'logout';
+            if ($('#mobileLoginIcon')) $('#mobileLoginIcon').textContent = 'logout';
+        } else {
+            if (sidebarLoginText) sidebarLoginText.textContent = 'Login to Sync';
+            if (mobileLoginText) mobileLoginText.textContent = 'Login';
+            if ($('#sidebarLoginIcon')) $('#sidebarLoginIcon').textContent = 'login';
+            if ($('#mobileLoginIcon')) $('#mobileLoginIcon').textContent = 'login';
+        }
+    }
+
+    async function handleLoginClick() {
+        if (currentUser) {
+            await signOut(auth);
+            showToast('Logged out');
+        } else {
+            const provider = new GoogleAuthProvider();
+            try {
+                await signInWithPopup(auth, provider);
+                showToast('Logged in successfully');
+            } catch (err) {
+                showToast('Login failed: ' + err.message);
+            }
+        }
+    }
+
+    function loadFirestoreData() {
+        if (!currentUser) return;
+        const entriesRef = collection(dbFirestore, 'users', currentUser.uid, 'entries');
+        
+        if (unsubscribeSnapshot) unsubscribeSnapshot();
+        
+        unsubscribeSnapshot = onSnapshot(entriesRef, (snapshot) => {
+            const serverEntries = [];
+            snapshot.forEach((doc) => {
+                serverEntries.push(doc.data());
+            });
+            entries = serverEntries;
+            saveToLocalStorage(); // Backup
+            migrateEntries();
+            render();
+        }, (error) => {
+            console.error("Error listening to Firestore:", error);
+            showToast("Sync error. Working offline.");
         });
     }
 
-    function putEntry(entry) {
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            const req = tx.objectStore(STORE_NAME).put(entry);
-            req.onsuccess = () => resolve();
-            req.onerror = () => reject(req.error);
-        });
+    async function putEntryFirestore(entry) {
+        if (!currentUser) return;
+        const entryRef = doc(dbFirestore, 'users', currentUser.uid, 'entries', entry.id);
+        await setDoc(entryRef, entry);
     }
 
-    function deleteEntryDB(id) {
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            const req = tx.objectStore(STORE_NAME).delete(id);
-            req.onsuccess = () => resolve();
-            req.onerror = () => reject(req.error);
-        });
+    async function deleteEntryFirestore(id) {
+        if (!currentUser) return;
+        const entryRef = doc(dbFirestore, 'users', currentUser.uid, 'entries', id);
+        await deleteDoc(entryRef);
     }
 
-    function clearDB() {
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            const req = tx.objectStore(STORE_NAME).clear();
-            req.onsuccess = () => resolve();
-            req.onerror = () => reject(req.error);
+    async function clearFirestore() {
+        if (!currentUser) return;
+        entries.forEach(async (entry) => {
+            await deleteEntryFirestore(entry.id);
         });
     }
 
@@ -245,6 +298,9 @@
     function bindEvents() {
         fuelForm.addEventListener('submit', handleSubmit);
         cancelEditBtn.addEventListener('click', cancelEdit);
+
+        if (sidebarLoginBtn) sidebarLoginBtn.addEventListener('click', handleLoginClick);
+        if (mobileLoginBtn) mobileLoginBtn.addEventListener('click', handleLoginClick);
 
         // Live calculation
         kmInput.addEventListener('input', calculateLive);
@@ -384,8 +440,8 @@
     }
 
     async function persist(entry) {
-        if (useIndexedDB) {
-            try { await putEntry(entry); } catch { /* fallback below */ }
+        if (currentUser) {
+            try { await putEntryFirestore(entry); } catch(e) { console.error(e); }
         }
         saveToLocalStorage();
     }
@@ -460,8 +516,8 @@
     async function deleteEntry(id) {
         showConfirm('Delete this fuel entry?', async () => {
             entries = entries.filter(en => en.id !== id);
-            if (useIndexedDB) {
-                try { await deleteEntryDB(id); } catch { /* ignore */ }
+            if (currentUser) {
+                try { await deleteEntryFirestore(id); } catch(e) { console.error(e); }
             }
             saveToLocalStorage();
             showToast('🗑️ Entry deleted');
@@ -596,7 +652,7 @@
 
     function updateDataPage() {
         if (dataEntryCount) dataEntryCount.textContent = entries.length;
-        if (dataStorageType) dataStorageType.textContent = useIndexedDB ? 'IndexedDB' : 'localStorage';
+        if (dataStorageType) dataStorageType.textContent = currentUser ? 'Firebase' : 'localStorage';
     }
 
     // ═══════════════════════════════════════════════════════
@@ -651,7 +707,7 @@
                 if (idx !== -1) entries[idx] = entry;
                 else entries.push(entry);
 
-                if (useIndexedDB) { try { await putEntry(entry); } catch {} }
+                if (currentUser) { try { await putEntryFirestore(entry); } catch {} }
             }
 
             saveToLocalStorage();
@@ -667,8 +723,10 @@
     function handleClear() {
         if (entries.length === 0) { showToast('Already empty'); return; }
         showConfirm('⚠️ Delete ALL entries? This cannot be undone.', async () => {
+            if (currentUser) {
+                try { await clearFirestore(); } catch(e) { console.error(e); }
+            }
             entries = [];
-            if (useIndexedDB) { try { await clearDB(); } catch {} }
             saveToLocalStorage();
             render();
             resetForm();
@@ -742,4 +800,3 @@
 
     // ─── Go ───
     init();
-})();

@@ -3,7 +3,7 @@
    Stale-while-revalidate for app shell + CDN resources
    ═══════════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'fuel-tracker-v2';
+const CACHE_NAME = 'fuel-tracker-v3';
 
 const APP_SHELL = [
     './',
