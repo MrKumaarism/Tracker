@@ -498,7 +498,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         const date        = dateInput.value;
 
         if (isNaN(km) || isNaN(price) || isNaN(spent) || km < 0 || price <= 0 || spent <= 0) {
-            showToast('⚠️ Please fill all fields with valid numbers');
+            showToast('Please fill all fields with valid numbers');
             return;
         }
 
@@ -542,7 +542,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             submitBtn.classList.replace('bg-primary', 'bg-secondary');
 
             setTimeout(() => {
-                showToast(editingId ? '✅ Entry updated' : '✅ Entry saved. Reset Trip Meter to 0.');
+                showToast(editingId ? 'Entry updated' : 'Entry saved. Reset Trip Meter to 0.');
                 resetForm();
                 submitBtn.innerHTML = origHtml;
                 submitBtn.classList.replace('bg-secondary', 'bg-primary');
@@ -719,7 +719,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
         filtered.forEach((entry, index) => {
             const clone = cardTemplate.content.cloneNode(true);
-            const card = clone.querySelector('.history-card');
+            const card = clone.querySelector('.ticket-card');
 
             // Stagger animation
             card.style.animationDelay = `${index * 50}ms`;
@@ -793,14 +793,14 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     //  EXPORT / IMPORT
     // ═══════════════════════════════════════════════════════
     function exportJSON() {
-        if (entries.length === 0) { showToast('⚠️ No data to export'); return; }
+        if (entries.length === 0) { showToast('No data to export'); return; }
         const blob = new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json' });
         downloadBlob(blob, `fuel-tracker-${todayStr()}.json`);
         showToast('📥 Exported as JSON');
     }
 
     function exportCSV() {
-        if (entries.length === 0) { showToast('⚠️ No data to export'); return; }
+        if (entries.length === 0) { showToast('No data to export'); return; }
         const headers = ['Date', 'Fuel Type', 'Vehicle Type', 'KM', 'Fuel Price', 'Amount Spent', 'Quantity', 'Mileage', 'Unit', 'Cost/km'];
         const rows = entries.map(e => [
             e.date, e.fuelType, e.vehicleType, e.km, e.price,
@@ -848,7 +848,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             render();
             showToast(`📤 Imported ${valid.length} entries`);
         } catch (err) {
-            showToast(`❌ Import failed: ${err.message}`);
+            showToast(`Import failed: ${err.message}`);
         }
 
         importFile.value = '';
@@ -856,7 +856,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
     function handleClear() {
         if (entries.length === 0) { showToast('Already empty'); return; }
-        showConfirm('⚠️ Delete ALL entries? This cannot be undone.', async () => {
+        showConfirm('Delete ALL entries? This cannot be undone.', async () => {
             if (currentUser) {
                 try { await clearFirestore(); } catch(e) { console.error(e); }
             }
