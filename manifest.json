@@ -1,7 +1,7 @@
 {
-    "name": "Fuel Tracker",
-    "short_name": "FuelTracker",
-    "description": "Track fuel consumption, mileage and expenses for your vehicles. Works offline.",
+    "name": "Tracker \u2014 Fuel & Inventory",
+    "short_name": "Tracker",
+    "description": "Log fuel-ups and purchases, and see how their prices move over time. Works offline.",
     "start_url": "./index.html",
     "display": "standalone",
     "background_color": "#2d2d2d",

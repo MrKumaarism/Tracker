@@ -1,18 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0052cc"/>
-      <stop offset="100%" stop-color="#003d9b"/>
-    </linearGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#6bff8f"/>
-      <stop offset="100%" stop-color="#007432"/>
-    </linearGradient>
-  </defs>
-  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
-  
-  <g transform="translate(24, 24) scale(3.33)">
-    <path d="M19.3 6.94C18.91 6.55 18.28 6.55 17.89 6.94L16 8.83V5C16 3.9 15.1 3 14 3H6C4.9 3 4 3.9 4 5V21H16V13.83L19.3 10.53C19.69 10.14 19.69 9.51 19.3 9.12V6.94ZM14 21H6V13H14V21ZM14 11H6V5H14V11Z" fill="#ffffff"/>
-    <rect x="7" y="6" width="6" height="4" rx="1" fill="url(#accent)"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Tracker">
+  <title>Tracker</title>
+
+  <!-- Outer shell -->
+  <rect width="128" height="128" rx="28" fill="#2d2d2d"/>
+
+  <!-- Binder holes -->
+  <g fill="none" stroke="#cccccc" stroke-width="2.2">
+    <circle cx="27.5" cy="41" r="3.6"/>
+    <circle cx="27.5" cy="64" r="3.6"/>
+    <circle cx="27.5" cy="87" r="3.6"/>
   </g>
+
+  <!-- Section tabs, drawn behind the page so only their right half shows -->
+  <rect x="93.4" y="30" width="9" height="18" rx="2.6" fill="#98d4bb"/>
+  <rect x="93.4" y="52" width="9" height="18" rx="2.6" fill="#c7b8ea"/>
+  <rect x="93.4" y="74" width="9" height="18" rx="2.6" fill="#f4b8c5"/>
+
+  <!-- Cream page -->
+  <rect x="34.6" y="23" width="58.8" height="82" rx="4.5" fill="#f8f6f1"/>
+
+  <!-- Price line: alternating rises and dips, so it reads as a chart -->
+  <polyline points="42.9,81.9 53.1,71.4 64,79.1 74.9,59.9 85.1,50.2"
+            fill="none" stroke="#2d2d2d" stroke-width="4.1"
+            stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="85.1" cy="50.2" r="3.8" fill="#2d2d2d"/>
 </svg>
