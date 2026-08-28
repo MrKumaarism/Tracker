@@ -603,14 +603,14 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         fuelForm.reset();
         setDefaultDate();
 
-        // Reset radio defaults
-        const petrolRadio = $('input[name="fuelType"][value="Petrol"]');
+        // Reset radio defaults — CNG is the usual fill-up
+        const cngRadio = $('input[name="fuelType"][value="CNG"]');
         const carRadio = $('input[name="vehicleType"][value="Car"]');
-        if (petrolRadio) petrolRadio.checked = true;
+        if (cngRadio) cngRadio.checked = true;
         if (carRadio) carRadio.checked = true;
 
-        priceInput.value = '102';
-        priceUnitLabel.textContent = '₹/L';
+        priceInput.value = '83';
+        priceUnitLabel.textContent = '₹/kg';
 
         formHeadingText.textContent = 'Log Fuel Entry';
         formIconEl.textContent = 'add_circle';

@@ -184,14 +184,14 @@
                 </div>
 
                 <!-- Stats Grid -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-md w-full" id="statsGrid">
+                <div class="order-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-md w-full" id="statsGrid">
                     <div class="ticket-card p-lg flex flex-col gap-sm">
                         <div class="flex items-center justify-between z-10">
                             <h2 class="text-[11px] font-bold text-on-surface-variant uppercase tracking-widest">Total Distance</h2>
                             <span class="material-symbols-outlined text-outline-variant text-[20px]">explore</span>
                         </div>
                         <div class="flex items-baseline gap-xs z-10 mt-1">
-                            <span class="text-3xl font-bold text-on-surface tracking-tight" id="statTotalKm">0</span>
+                            <span class="text-3xl font-bold text-on-surface tracking-tight" id="stat-total-km">0</span>
                             <span class="text-sm font-semibold text-on-surface-variant">km</span>
                         </div>
                     </div>
@@ -201,7 +201,7 @@
                             <span class="material-symbols-outlined text-outline-variant text-[20px]">luggage</span>
                         </div>
                         <div class="flex items-baseline gap-xs z-10 mt-1">
-                            <span class="text-3xl font-bold text-on-surface tracking-tight" id="statTotalEntries">0</span>
+                            <span class="text-3xl font-bold text-on-surface tracking-tight" id="stat-total-entries">0</span>
                             <span class="text-sm font-semibold text-on-surface-variant">entries</span>
                         </div>
                     </div>
@@ -212,9 +212,9 @@
                         </div>
                         <div class="flex items-baseline gap-xs z-10 mt-1">
                             <span class="text-lg text-on-surface-variant">₹</span>
-                            <span class="text-3xl font-bold text-on-surface tracking-tight" id="statTotalSpent">0</span>
+                            <span class="text-3xl font-bold text-on-surface tracking-tight" id="stat-total-spent">0</span>
                         </div>
-                        <span class="text-[10px] text-on-surface-variant z-10">This Month: <span class="font-semibold">₹<span id="statMonthSpent">0</span></span></span>
+                        <span class="text-[10px] text-on-surface-variant z-10">This Month: <span class="font-semibold">₹<span id="stat-month-spent">0</span></span></span>
                     </div>
                     <div class="ticket-card p-lg flex flex-col gap-sm">
                         <div class="flex items-center justify-between z-10">
@@ -222,16 +222,16 @@
                             <span class="material-symbols-outlined text-outline-variant text-[20px]">speed</span>
                         </div>
                         <div class="flex items-baseline gap-xs z-10 mt-1">
-                            <span class="text-3xl font-bold text-secondary tracking-tight" id="statOverallAvg">—</span>
-                            <span class="text-sm font-semibold text-on-surface-variant">km/unit</span>
+                            <span class="text-3xl font-bold text-secondary tracking-tight" id="stat-overall-avg">—</span>
+                            <span class="text-sm font-semibold text-on-surface-variant" id="stat-avg-unit">km/unit</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Form + Tip Side Panel -->
-                <div class="flex flex-col lg:flex-row gap-lg w-full items-start">
+                <!-- Entry form sits above the stats: logging is the reason you opened the app -->
+                <div class="order-2 flex flex-col lg:flex-row gap-lg w-full items-start">
                     <!-- Entry Form -->
-                    <div class="w-full lg:w-2/3 bg-surface-container-lowest border border-outline-variant p-lg shadow-sm relative overflow-hidden rounded-lg">
+                    <div class="w-full bg-surface-container-lowest border border-outline-variant p-lg shadow-sm relative overflow-hidden rounded-lg">
                         <div class="flex items-center gap-md mb-lg pb-sm border-b-2 border-dashed border-outline-variant">
                             <span class="material-symbols-outlined text-[24px]" id="formIconEl">edit_document</span>
                             <h2 class="text-xl font-bold text-on-surface uppercase tracking-widest" id="formHeadingText">Declaration Form</h2>
@@ -244,11 +244,11 @@
                                     <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Fuel Type</label>
                                     <div class="flex gap-sm">
                                         <label class="flex-1 cursor-pointer">
-                                            <input type="radio" name="fuelType" value="Petrol" checked class="peer sr-only">
+                                            <input type="radio" name="fuelType" value="Petrol" class="peer sr-only">
                                             <div class="px-md py-sm border border-outline text-center text-sm text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary transition-all font-bold">Petrol</div>
                                         </label>
                                         <label class="flex-1 cursor-pointer">
-                                            <input type="radio" name="fuelType" value="CNG" class="peer sr-only">
+                                            <input type="radio" name="fuelType" value="CNG" checked class="peer sr-only">
                                             <div class="px-md py-sm border border-outline text-center text-sm text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary transition-all font-bold">CNG</div>
                                         </label>
                                     </div>
@@ -279,10 +279,10 @@
                                     <input class="w-full bg-transparent text-on-surface text-base px-sm py-sm outline-none border-b border-outline-variant focus:border-primary transition-colors" id="kmDriven" type="number" min="0" step="0.1" placeholder="0.0" required>
                                 </div>
                                 <div class="flex flex-col gap-xs">
-                                    <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider" for="fuelPrice">Fuel Price (<span id="fuel-price-unit-label">₹/L</span>)</label>
+                                    <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider" for="fuelPrice">Fuel Price (<span id="fuel-price-unit-label">₹/kg</span>)</label>
                                     <div class="relative">
                                         <span class="absolute left-0 top-1/2 -translate-y-1/2 text-on-surface-variant">₹</span>
-                                        <input class="w-full bg-transparent text-on-surface text-base pl-lg pr-sm py-sm outline-none border-b border-outline-variant focus:border-primary transition-colors" id="fuelPrice" type="number" min="0.1" step="0.01" placeholder="102.00" value="102" required>
+                                        <input class="w-full bg-transparent text-on-surface text-base pl-lg pr-sm py-sm outline-none border-b border-outline-variant focus:border-primary transition-colors" id="fuelPrice" type="number" min="0.1" step="0.01" placeholder="83.00" value="83" required>
                                     </div>
                                 </div>
                                 <div class="flex flex-col gap-xs">
@@ -358,20 +358,6 @@
                                 
                             </div>
                         </form>
-                    </div>
-
-                    <div class="w-full lg:w-1/3 flex flex-col gap-md">
-                        <!-- Quick Stats Mini -->
-                        <div class="bg-surface-container rounded-2xl p-lg shadow-sm">
-                            <span class="text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">This Month</span>
-                            <div class="flex items-baseline gap-xs mt-sm">
-                                <span class="text-sm text-on-surface-variant">₹</span>
-                                <span class="text-3xl font-bold text-on-surface tracking-tight" id="stat-month-spent">0</span>
-                            </div>
-                            <div class="w-full h-1 bg-surface-container-high mt-3 rounded-full overflow-hidden">
-                                <div class="h-full bg-gradient-to-r from-primary to-secondary rounded-full transition-all duration-700" id="bar-month" style="width:0%"></div>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </section>

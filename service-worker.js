@@ -3,7 +3,7 @@
    Network-first for pages, stale-while-revalidate for assets
    ═══════════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'fuel-tracker-v10';
+const CACHE_NAME = 'fuel-tracker-v11';
 
 const APP_SHELL = [
     './',
