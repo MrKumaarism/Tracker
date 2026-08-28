@@ -1,14 +1,15 @@
 /* ═══════════════════════════════════════════════════════
    Fuel Tracker — Service Worker
-   Stale-while-revalidate for app shell + CDN resources
+   Network-first for pages, stale-while-revalidate for assets
    ═══════════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'fuel-tracker-v5';
+const CACHE_NAME = 'fuel-tracker-v6';
 
 const APP_SHELL = [
     './',
     './index.html',
     './inventory.html',
+    './reset.html',
     './style.css',
     './app.js',
     './inventory.js',
@@ -36,30 +37,47 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// ─── Fetch: stale-while-revalidate ───
+// ─── Fetch ───
+// Pages: network-first, so an updated app shell shows up on the very next load.
+// Assets: stale-while-revalidate, since they are cheap to serve stale for one load.
 self.addEventListener('fetch', (event) => {
     if (event.request.method !== 'GET') return;
 
-    event.respondWith(
-        caches.match(event.request).then((cached) => {
-            const fetchPromise = fetch(event.request)
-                .then((response) => {
-                    if (response && response.status === 200) {
-                        const clone = response.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-                    }
-                    return response;
-                })
-                .catch(() => {
-                    // Offline: serve the requested page from cache, index.html as last resort
-                    if (event.request.mode === 'navigate') {
-                        return cached || caches.match('./index.html');
-                    }
-                    return cached;
-                });
+    if (event.request.mode === 'navigate') {
+        event.respondWith(networkFirst(event.request));
+        return;
+    }
 
-            // Return cached version immediately if available, otherwise wait for network
-            return cached || fetchPromise;
-        })
-    );
+    event.respondWith(staleWhileRevalidate(event.request));
 });
+
+async function networkFirst(request) {
+    try {
+        const response = await fetch(request);
+        if (response && response.status === 200) {
+            const cache = await caches.open(CACHE_NAME);
+            cache.put(request, response.clone());
+        }
+        return response;
+    } catch {
+        // Offline: the requested page, then index.html as last resort.
+        return (await caches.match(request))
+            || (await caches.match('./index.html'));
+    }
+}
+
+async function staleWhileRevalidate(request) {
+    const cached = await caches.match(request);
+
+    const fetchPromise = fetch(request)
+        .then((response) => {
+            if (response && response.status === 200) {
+                const clone = response.clone();
+                caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+            }
+            return response;
+        })
+        .catch(() => cached);
+
+    return cached || fetchPromise;
+}

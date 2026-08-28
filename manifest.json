@@ -4,8 +4,8 @@
     "description": "Track fuel consumption, mileage and expenses for your vehicles. Works offline.",
     "start_url": "./index.html",
     "display": "standalone",
-    "background_color": "#f7f9fb",
-    "theme_color": "#003d9b",
+    "background_color": "#2d2d2d",
+    "theme_color": "#2d2d2d",
     "orientation": "portrait-primary",
     "icons": [
         {
@@ -19,6 +19,30 @@
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "any maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Log a purchase",
+            "short_name": "Inventory",
+            "url": "./inventory.html",
+            "icons": [
+                {
+                    "src": "icons/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "Log a fuel-up",
+            "short_name": "Fuel",
+            "url": "./index.html",
+            "icons": [
+                {
+                    "src": "icons/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
         }
     ]
 }

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#2d2d2d">
+    <title>Reset App Cache</title>
+    <style>
+        :root { color-scheme: dark; }
+        body {
+            margin: 0; min-height: 100dvh;
+            display: flex; align-items: center; justify-content: center;
+            background: #2d2d2d; color: #f8f6f1;
+            font-family: system-ui, sans-serif; padding: 1.5rem;
+        }
+        .card {
+            background: #f8f6f1; color: #1a1a1a;
+            border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,.15);
+            padding: 1.5rem; max-width: 26rem; width: 100%;
+        }
+        h1 { font-size: 1.25rem; margin: 0 0 .75rem; }
+        p { font-size: .875rem; line-height: 1.6; margin: 0 0 1rem; color: #5a5a5a; }
+        #log {
+            font-family: ui-monospace, monospace; font-size: .75rem;
+            background: #e9e5db; border-radius: 8px; padding: .75rem;
+            white-space: pre-wrap; word-break: break-word; margin-bottom: 1rem;
+        }
+        .links { display: flex; gap: .5rem; flex-wrap: wrap; }
+        a {
+            flex: 1; min-width: 8rem; text-align: center; text-decoration: none;
+            background: #2d2d2d; color: #98d4bb;
+            padding: .75rem 1rem; border-radius: 999px;
+            font-size: .75rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: .08em;
+        }
+        a.alt { background: #98d4bb; color: #1a1a1a; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Reset App Cache</h1>
+        <p>Clears the stored service worker and offline files, then reloads the app fresh from the server.</p>
+        <div id="log">working…</div>
+        <div class="links">
+            <a class="alt" href="inventory.html">Open Inventory</a>
+            <a href="index.html">Open Fuel Tracker</a>
+        </div>
+    </div>
+
+    <script>
+    (async () => {
+        const log = document.getElementById('log');
+        const lines = [];
+        const say = (msg) => { lines.push(msg); log.textContent = lines.join('\n'); };
+
+        try {
+            if ('serviceWorker' in navigator) {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                say(`service workers found: ${regs.length}`);
+                for (const reg of regs) {
+                    await reg.unregister();
+                    say(`unregistered: ${reg.scope}`);
+                }
+            } else {
+                say('service workers not supported here');
+            }
+        } catch (err) {
+            say('SW unregister failed: ' + err.message);
+        }
+
+        try {
+            if ('caches' in window) {
+                const keys = await caches.keys();
+                say(`caches found: ${keys.length ? keys.join(', ') : 'none'}`);
+                await Promise.all(keys.map(k => caches.delete(k)));
+                if (keys.length) say('caches deleted');
+            }
+        } catch (err) {
+            say('cache clear failed: ' + err.message);
+        }
+
+        say('');
+        say('Done. Tap a button below.');
+    })();
+    </script>
+</body>
+</html>
