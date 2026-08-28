@@ -143,6 +143,12 @@
                         <span class="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">Fuel</span>
                         <span class="material-symbols-outlined text-[16px]">swap_horiz</span>
                     </a>
+                    <!-- Account. Lives up here, not in the bottom nav, where a
+                         thumb reaching for Data kept logging the user out. -->
+                    <a id="mobileLoginBtn" class="login-link lg:hidden flex items-center px-sm py-xs rounded-full border border-on-background/20 transition-colors shrink-0 cursor-pointer" aria-label="Account">
+                        <span class="material-symbols-outlined text-[18px]" id="mobileLoginIcon">login</span>
+                        <span class="text-[10px] font-bold uppercase tracking-wider ml-xs hidden sm:inline" id="mobileLoginText">Login</span>
+                    </a>
                 </div>
             </div>
         </header>
@@ -335,10 +341,6 @@
             <a href="index.html" class="login-link flex flex-col items-center gap-xs transition-colors cursor-pointer">
                 <span class="material-symbols-outlined">local_gas_station</span>
                 <span class="text-[10px] font-semibold">Fuel</span>
-            </a>
-            <a id="mobileLoginBtn" class="login-link flex flex-col items-center gap-xs transition-colors cursor-pointer">
-                <span class="material-symbols-outlined" id="mobileLoginIcon">login</span>
-                <span class="text-[10px] font-semibold" id="mobileLoginText">Login</span>
             </a>
         </nav>
     </div>

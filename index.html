@@ -147,6 +147,12 @@
                         <span class="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">Inventory</span>
                         <span class="material-symbols-outlined text-[16px]">swap_horiz</span>
                     </a>
+                    <!-- Account. Lives up here, not in the bottom nav, where a
+                         thumb reaching for Data kept logging the user out. -->
+                    <a id="mobileLoginBtn" class="login-link lg:hidden flex items-center px-sm py-xs rounded-full border border-on-background/20 transition-colors shrink-0 cursor-pointer" aria-label="Account">
+                        <span class="material-symbols-outlined text-[18px]" id="mobileLoginIcon">login</span>
+                        <span class="text-[10px] font-bold uppercase tracking-wider ml-xs hidden sm:inline" id="mobileLoginText">Login</span>
+                    </a>
                 </div>
             </div>
         </header>
@@ -354,19 +360,7 @@
                         </form>
                     </div>
 
-                    <!-- Side Tip Card -->
                     <div class="w-full lg:w-1/3 flex flex-col gap-md">
-                        <div class="bg-surface-container rounded-2xl shadow-sm overflow-hidden">
-                            <div class="bg-gradient-to-br from-primary-container to-primary p-lg flex flex-col gap-sm text-on-primary-container">
-                                <span class="material-symbols-outlined text-3xl opacity-60">eco</span>
-                                <span class="text-[11px] font-semibold uppercase tracking-widest opacity-70">Efficiency Tip</span>
-                                <p class="text-sm leading-relaxed">Maintaining a steady speed on highways can improve your fuel economy by up to <strong>15%</strong>.</p>
-                            </div>
-                            <div class="p-md flex items-center gap-xs text-secondary">
-                                <span class="material-symbols-outlined text-[14px]">eco</span>
-                                <span class="text-[10px] font-semibold uppercase tracking-wider">Eco Drive</span>
-                            </div>
-                        </div>
                         <!-- Quick Stats Mini -->
                         <div class="bg-surface-container rounded-2xl p-lg shadow-sm">
                             <span class="text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">This Month</span>
@@ -536,10 +530,6 @@
             <a href="inventory.html" class="login-link flex flex-col items-center gap-xs transition-colors cursor-pointer">
                 <span class="material-symbols-outlined">shopping_basket</span>
                 <span class="text-[10px] font-semibold">Items</span>
-            </a>
-            <a id="mobileLoginBtn" class="login-link flex flex-col items-center gap-xs transition-colors cursor-pointer">
-                <span class="material-symbols-outlined" id="mobileLoginIcon">login</span>
-                <span class="text-[10px] font-semibold" id="mobileLoginText">Login</span>
             </a>
         </nav>
     </div>
