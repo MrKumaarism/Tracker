@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Track grocery and household purchases, compare unit prices over time, and see what got more expensive. Works offline as a PWA.">
+    <meta name="theme-color" content="#2d2d2d">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>Inventory — Purchase &amp; Price Tracker</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/svg+xml" href="icons/favicon.svg">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+    tailwind.config = {
+        theme: {
+            extend: {
+                colors: {
+                    /* Notebook Tabs — outer dark shell, cream paper pages */
+                    background: "#2d2d2d",
+                    surface: "#f8f6f1",
+                    "surface-container-lowest": "#fdfcf9",
+                    "surface-container": "#f2efe8",
+                    "surface-container-low": "#f5f3ed",
+                    "surface-container-high": "#e9e5db",
+
+                    "on-background": "#f8f6f1",
+                    "on-surface": "#1a1a1a",
+                    "on-surface-variant": "#5a5a5a",
+
+                    primary: "#2d2d2d",
+                    "on-primary": "#98d4bb",
+                    "primary-container": "#98d4bb",
+                    "on-primary-container": "#1a1a1a",
+
+                    secondary: "#7b6aa8",
+                    "on-secondary": "#f8f6f1",
+                    "secondary-container": "#c7b8ea",
+                    "on-secondary-container": "#1a1a1a",
+
+                    error: "#b3455e",
+                    "on-error": "#f8f6f1",
+                    "error-container": "#f4b8c5",
+
+                    "inverse-surface": "#1a1a1a",
+                    "inverse-on-surface": "#f8f6f1",
+
+                    outline: "#1a1a1a",
+                    "outline-variant": "#d8d3c5",
+
+                    "tab-1": "#98d4bb",
+                    "tab-2": "#c7b8ea",
+                    "tab-3": "#f4b8c5",
+                    "tab-4": "#a8d8ea",
+                    "tab-5": "#ffe6a7"
+                },
+                borderRadius: {
+                    DEFAULT: "8px",
+                    lg: "8px",
+                    xl: "8px",
+                    "2xl": "8px",
+                    full: "9999px",
+                },
+                spacing: {
+                    gutter: "16px",
+                    sm: "8px",
+                    xs: "4px",
+                    unit: "4px",
+                    lg: "24px",
+                    md: "16px",
+                    "container-margin": "16px",
+                    xl: "32px",
+                },
+                fontFamily: {
+                    sans: ["'DM Sans'", "system-ui", "sans-serif"],
+                    display: ["'Bodoni Moda'", "Georgia", "serif"],
+                    mono: ["'JetBrains Mono'", "ui-monospace", "monospace"],
+                },
+            },
+        },
+    };
+    </script>
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,600;6..96,700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-background font-sans text-on-surface text-sm">
+
+    <!-- ═══════ Desktop Sidebar ═══════ -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-64 bg-background z-50 hidden lg:flex flex-col">
+        <div class="p-lg flex items-center gap-md mb-xl">
+            <span class="material-symbols-outlined text-on-background text-[28px]">shopping_basket</span>
+            <span class="font-display text-xl font-bold text-on-background tracking-tight">Inventory</span>
+        </div>
+        <nav class="flex-1 px-md flex flex-col gap-xs" id="sidebarNav">
+            <a class="nav-link active flex items-center px-md py-sm rounded-xl transition-colors cursor-pointer" data-page="log">
+                <span class="material-symbols-outlined mr-md">add_shopping_cart</span>
+                <span class="text-xs font-semibold tracking-wider uppercase">Log</span>
+            </a>
+            <a class="nav-link flex items-center px-md py-sm rounded-xl transition-colors cursor-pointer" data-page="prices">
+                <span class="material-symbols-outlined mr-md">trending_up</span>
+                <span class="text-xs font-semibold tracking-wider uppercase">Price History</span>
+            </a>
+            <div class="mt-auto"></div>
+            <!-- App switcher -->
+            <a href="index.html" class="login-link flex items-center px-md py-sm rounded-xl transition-colors cursor-pointer">
+                <span class="material-symbols-outlined mr-md">local_gas_station</span>
+                <span class="text-xs font-semibold tracking-wider uppercase">Fuel Tracker</span>
+            </a>
+            <a id="sidebarLoginBtn" class="login-link flex items-center px-md py-sm rounded-xl transition-colors cursor-pointer mb-2">
+                <span class="material-symbols-outlined mr-md" id="sidebarLoginIcon">login</span>
+                <span class="text-xs font-semibold tracking-wider uppercase" id="sidebarLoginText">Login</span>
+            </a>
+        </nav>
+        <div class="p-md text-[10px] text-outline uppercase tracking-wider text-center">
+            v1.0 · PWA · Offline Ready
+        </div>
+    </aside>
+
+    <!-- ═══════ Main Content Area ═══════ -->
+    <div class="lg:pl-64 min-h-screen flex flex-col">
+
+        <!-- ─── Top Header ─── -->
+        <header class="fixed top-0 left-0 right-0 lg:left-64 h-16 bg-background z-40">
+            <div class="h-16 w-full px-md lg:px-lg flex items-center justify-between">
+                <div class="flex items-center gap-sm lg:hidden">
+                    <span class="material-symbols-outlined text-on-background text-[22px]">shopping_basket</span>
+                    <span class="font-display text-lg font-bold text-on-background">Inventory</span>
+                </div>
+                <div class="flex-1"></div>
+                <div class="flex items-center gap-md">
+                    <span id="headerPageTitle" class="font-display text-sm font-semibold text-on-background/70 uppercase tracking-widest">Log</span>
+                    <!-- App switcher -->
+                    <a href="index.html" class="login-link flex items-center gap-xs px-sm py-xs rounded-full border border-on-background/20 transition-colors" aria-label="Switch to Fuel Tracker">
+                        <span class="material-symbols-outlined text-[18px]">local_gas_station</span>
+                        <span class="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">Fuel</span>
+                        <span class="material-symbols-outlined text-[16px]">swap_horiz</span>
+                    </a>
+                </div>
+            </div>
+        </header>
+
+        <!-- ═══════ NOTEBOOK SHELL ═══════ -->
+        <div class="notebook-shell flex-1 w-full max-w-screen-xl mx-auto">
+
+            <!-- Binder holes (decorative) -->
+            <div class="binder-holes" aria-hidden="true">
+                <span class="binder-hole"></span><span class="binder-hole"></span><span class="binder-hole"></span>
+                <span class="binder-hole"></span><span class="binder-hole"></span><span class="binder-hole"></span>
+            </div>
+
+            <!-- Section tabs -->
+            <nav class="tab-rail" aria-label="Sections">
+                <a class="tab nav-link active" data-page="log" style="--tab-color: #a8d8ea">Log</a>
+                <a class="tab nav-link" data-page="prices" style="--tab-color: #ffe6a7">Prices</a>
+            </nav>
+
+        <!-- ═══════ PAGES ═══════ -->
+        <main class="page flex-1 pt-16 pb-24 lg:pb-lg w-full px-md lg:px-lg">
+
+            <!-- ═══════ PAGE: LOG ═══════ -->
+            <section id="page-log" class="page-section flex flex-col w-full gap-xl">
+
+                <header class="pt-lg pb-md flex flex-col md:flex-row md:items-end justify-between gap-lg">
+                    <div class="flex flex-col gap-xs">
+                        <h1 class="font-display text-3xl font-bold text-on-surface">Quick Entry</h1>
+                        <p class="text-xs text-on-surface-variant">Log it before you unpack the bags.</p>
+                    </div>
+                    <div class="flex gap-lg">
+                        <div class="flex flex-col">
+                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Products</span>
+                            <span id="stat-products" class="font-display text-2xl font-bold text-on-surface">0</span>
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Entries</span>
+                            <span id="stat-entries" class="font-display text-2xl font-bold text-on-surface">0</span>
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">This Month</span>
+                            <span id="stat-month" class="font-display text-2xl font-bold text-on-surface">₹0</span>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- ─── Entry form (the one popup) ─── -->
+                <form id="invForm" class="bg-surface-container-lowest border border-outline-variant rounded-lg p-md lg:p-lg flex flex-col gap-md" autocomplete="off">
+                    <input type="hidden" id="invEditId">
+
+                    <!-- Product -->
+                    <label class="flex flex-col gap-xs">
+                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Product</span>
+                        <input id="invProduct" list="productList" type="text" required placeholder="Amul Milk 1L"
+                               class="bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
+                        <datalist id="productList"></datalist>
+                    </label>
+
+                    <!-- Last price recall -->
+                    <p id="lastPriceHint" class="hidden text-xs text-on-surface-variant bg-surface-container-high rounded px-md py-sm"></p>
+
+                    <!-- Category -->
+                    <label class="flex flex-col gap-xs">
+                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Category</span>
+                        <select id="invCategory" class="bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary"></select>
+                    </label>
+
+                    <!-- Qty / Unit / Price on one row -->
+                    <div class="grid grid-cols-3 gap-sm">
+                        <label class="flex flex-col gap-xs">
+                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Qty</span>
+                            <input id="invQty" type="number" inputmode="decimal" step="any" min="0" value="1" required
+                                   class="bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
+                        </label>
+                        <label class="flex flex-col gap-xs">
+                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Unit</span>
+                            <select id="invUnit" class="bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary"></select>
+                        </label>
+                        <label class="flex flex-col gap-xs">
+                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">₹ / Unit</span>
+                            <input id="invPrice" type="number" inputmode="decimal" step="any" min="0" required placeholder="32"
+                                   class="bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
+                        </label>
+                    </div>
+
+                    <!-- Store -->
+                    <label class="flex flex-col gap-xs">
+                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Store <span class="normal-case tracking-normal font-normal">(optional)</span></span>
+                        <input id="invStore" type="text" placeholder="DMart"
+                               class="bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
+                    </label>
+
+                    <!-- Date, collapsed by default -->
+                    <button type="button" id="toggleDate" class="self-start text-[10px] font-bold text-on-surface-variant uppercase tracking-widest underline underline-offset-4">
+                        Date &amp; notes
+                    </button>
+                    <div id="dateRow" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-sm">
+                        <label class="flex flex-col gap-xs">
+                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Purchase Date</span>
+                            <input id="invDate" type="date" required
+                                   class="bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
+                        </label>
+                        <label class="flex flex-col gap-xs">
+                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Notes</span>
+                            <input id="invNotes" type="text" placeholder="sale / bulk pack"
+                                   class="bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
+                        </label>
+                    </div>
+
+                    <div class="flex items-center justify-between gap-md pt-xs">
+                        <span id="invTotalPreview" class="text-xs font-bold text-on-surface-variant"></span>
+                        <div class="flex gap-sm">
+                            <button type="button" id="invCancelEdit" class="hidden px-lg py-sm rounded-full bg-surface-container text-on-surface-variant text-xs font-bold uppercase tracking-wide">Cancel</button>
+                            <button type="submit" class="px-xl py-sm rounded-full bg-primary text-on-primary text-xs font-bold uppercase tracking-wide shadow-md hover:shadow-lg transition-all">
+                                <span id="invSubmitText">Save</span>
+                            </button>
+                        </div>
+                    </div>
+                </form>
+
+                <!-- ─── Recent entries ─── -->
+                <div class="flex flex-col gap-md">
+                    <h2 class="font-display text-xl font-bold text-on-surface">Recent</h2>
+                    <div id="logList" class="flex flex-col gap-sm"></div>
+                    <p id="logEmpty" class="text-xs text-on-surface-variant py-lg text-center">
+                        No purchases logged yet. Add one above.
+                    </p>
+                </div>
+            </section>
+
+            <!-- ═══════ PAGE: PRICES ═══════ -->
+            <section id="page-prices" class="page-section hidden flex flex-col w-full gap-lg">
+
+                <header class="pt-lg pb-xs flex flex-col gap-xs">
+                    <h1 class="font-display text-3xl font-bold text-on-surface">Price History</h1>
+                    <p class="text-xs text-on-surface-variant">Latest unit price against what you used to pay.</p>
+                </header>
+
+                <div class="sticky top-16 z-10 bg-surface/90 backdrop-blur-sm py-sm flex flex-col gap-sm">
+                    <input id="invSearch" type="search" placeholder="Search products"
+                           class="w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
+                    <div id="invFilters" class="flex gap-xs overflow-x-auto pb-xs"></div>
+                </div>
+
+                <div id="priceList" class="flex flex-col gap-sm"></div>
+                <p id="priceEmpty" class="text-xs text-on-surface-variant py-lg text-center">
+                    Nothing to compare yet. Log the same product twice to see a trend.
+                </p>
+            </section>
+
+        </main>
+        </div><!-- /notebook-shell -->
+
+        <!-- ─── Mobile Bottom Nav ─── -->
+        <nav class="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-background flex items-center justify-around px-md z-50" id="bottomNav">
+            <a class="bottom-nav-link active flex flex-col items-center gap-xs transition-colors cursor-pointer" data-page="log">
+                <span class="material-symbols-outlined">add_shopping_cart</span>
+                <span class="text-[10px] font-semibold">Log</span>
+            </a>
+            <a class="bottom-nav-link flex flex-col items-center gap-xs transition-colors cursor-pointer" data-page="prices">
+                <span class="material-symbols-outlined">trending_up</span>
+                <span class="text-[10px] font-semibold">Prices</span>
+            </a>
+            <a href="index.html" class="login-link flex flex-col items-center gap-xs transition-colors cursor-pointer">
+                <span class="material-symbols-outlined">local_gas_station</span>
+                <span class="text-[10px] font-semibold">Fuel</span>
+            </a>
+            <a id="mobileLoginBtn" class="login-link flex flex-col items-center gap-xs transition-colors cursor-pointer">
+                <span class="material-symbols-outlined" id="mobileLoginIcon">login</span>
+                <span class="text-[10px] font-semibold" id="mobileLoginText">Login</span>
+            </a>
+        </nav>
+    </div>
+
+    <!-- ═══════ Toast ═══════ -->
+    <div id="toast" class="fixed bottom-20 lg:bottom-8 left-1/2 -translate-x-1/2 translate-y-24 opacity-0 bg-inverse-surface text-inverse-on-surface px-lg py-md rounded-xl shadow-lg z-[999] text-sm font-medium transition-all duration-300 pointer-events-none whitespace-nowrap"></div>
+
+    <!-- ═══════ Confirm Dialog ═══════ -->
+    <div id="confirmOverlay" class="hidden fixed inset-0 bg-black/50 z-[500] flex items-center justify-center backdrop-blur-sm animate-fade-in">
+        <div class="bg-surface-container-lowest rounded-2xl p-lg shadow-xl max-w-sm w-[90%] animate-scale-in">
+            <p id="confirmMessage" class="text-base font-medium text-on-surface mb-lg text-center">Are you sure?</p>
+            <div class="flex gap-sm justify-center">
+                <button id="confirmNo" class="px-xl py-sm rounded-full bg-surface-container text-on-surface-variant text-xs font-semibold uppercase tracking-wide hover:bg-surface-container-high transition-colors">Cancel</button>
+                <button id="confirmYes" class="px-xl py-sm rounded-full bg-error text-on-error text-xs font-semibold uppercase tracking-wide shadow-md hover:shadow-lg transition-all">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="inventory.js"></script>
+</body>
+</html>

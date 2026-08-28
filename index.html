@@ -113,6 +113,11 @@
                 <span class="text-xs font-semibold tracking-wider uppercase">Export / Import</span>
             </a>
             <div class="mt-auto"></div>
+            <!-- App switcher -->
+            <a href="inventory.html" class="login-link flex items-center px-md py-sm rounded-xl transition-colors cursor-pointer">
+                <span class="material-symbols-outlined mr-md">shopping_basket</span>
+                <span class="text-xs font-semibold tracking-wider uppercase">Inventory</span>
+            </a>
             <a id="sidebarLoginBtn" class="login-link flex items-center px-md py-sm rounded-xl transition-colors cursor-pointer mb-2">
                 <span class="material-symbols-outlined mr-md" id="sidebarLoginIcon">login</span>
                 <span class="text-xs font-semibold tracking-wider uppercase" id="sidebarLoginText">Login</span>
@@ -134,8 +139,14 @@
                     <span class="font-display text-lg font-bold text-on-background">Fuel Tracker</span>
                 </div>
                 <div class="flex-1"></div>
-                <div class="flex items-center gap-sm">
+                <div class="flex items-center gap-md">
                     <span id="headerPageTitle" class="font-display text-sm font-semibold text-on-background/70 uppercase tracking-widest"></span>
+                    <!-- App switcher -->
+                    <a href="inventory.html" class="login-link flex items-center gap-xs px-sm py-xs rounded-full border border-on-background/20 transition-colors" aria-label="Switch to Inventory">
+                        <span class="material-symbols-outlined text-[18px]">shopping_basket</span>
+                        <span class="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">Inventory</span>
+                        <span class="material-symbols-outlined text-[16px]">swap_horiz</span>
+                    </a>
                 </div>
             </div>
         </header>

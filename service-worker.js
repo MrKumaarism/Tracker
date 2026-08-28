@@ -3,13 +3,15 @@
    Stale-while-revalidate for app shell + CDN resources
    ═══════════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'fuel-tracker-v3';
+const CACHE_NAME = 'fuel-tracker-v4';
 
 const APP_SHELL = [
     './',
     './index.html',
+    './inventory.html',
     './style.css',
     './app.js',
+    './inventory.js',
     './manifest.json',
     './icons/favicon.svg',
     './icons/icon-192.png',
@@ -49,9 +51,9 @@ self.addEventListener('fetch', (event) => {
                     return response;
                 })
                 .catch(() => {
-                    // Offline: fallback to index.html for navigation requests
+                    // Offline: serve the requested page from cache, index.html as last resort
                     if (event.request.mode === 'navigate') {
-                        return caches.match('./index.html');
+                        return cached || caches.match('./index.html');
                     }
                     return cached;
                 });
