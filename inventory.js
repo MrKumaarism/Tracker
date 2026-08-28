@@ -22,8 +22,8 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 });
 
 /* ═══════════════════════════════════════════════════════
-   Personal Inventory — Application Logic
-   Separate collection from fuel entries: users/{uid}/purchases
+   Personal Inventory — price history, not expense tracking.
+   Collection: users/{uid}/purchases
    ═══════════════════════════════════════════════════════ */
 
     // ─── Constants ───
@@ -35,9 +35,12 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     const SEED_UNITS = ['piece', 'pack', '100g', '250g', '500g', 'kg', '250ml', '500ml', 'L', 'dozen'];
     // Warn (never block) when a price is wildly off the last one — usually a wrong unit.
     const PRICE_SANITY_FACTOR = 2;
-    const RECENT_LIMIT = 30;
-    // Quantity is fixed: one line per item, the unit carries the pack size.
-    const FIXED_QUANTITY = 1;
+    const LOOKUP_ROWS = 3;
+    const SEARCH_DEBOUNCE_MS = 150;
+
+    // Typing-effect placeholder
+    const PLACEHOLDER_EXAMPLES = ['Milk', 'Rice', 'Dhaniya', 'Toor Dal', 'Amul Butter', 'Onion'];
+    const TYPE_MS = 90, DELETE_MS = 45, HOLD_MS = 1400;
 
     // ─── State ───
     let purchases = [];
@@ -46,6 +49,9 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     let editingId = null;
     let activeCategory = 'All';
     let searchTerm = '';
+    let sortKey = 'purchased';
+    let sortDir = 'desc';
+    let searchTimer = null;
 
     // ─── DOM Helpers ───
     const $ = (s) => document.querySelector(s);
@@ -55,26 +61,26 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     const form          = $('#invForm');
     const editIdInput   = $('#invEditId');
     const storeInput    = $('#invStore');
-    const dateInput     = $('#invDate');
     const itemRows      = $('#itemRows');
     const rowTemplate   = $('#itemRowTemplate');
     const addItemBtn    = $('#addItemBtn');
     const submitText    = $('#invSubmitText');
     const cancelEditBtn = $('#invCancelEdit');
-    const totalPreview  = $('#invTotalPreview');
+    const itemCount     = $('#invItemCount');
     const productList   = $('#productList');
     const categoryList  = $('#categoryList');
     const unitList      = $('#unitList');
     const storeList     = $('#storeList');
-    const logList       = $('#logList');
-    const logEmpty      = $('#logEmpty');
-    const priceList     = $('#priceList');
-    const priceEmpty    = $('#priceEmpty');
     const searchInput   = $('#invSearch');
     const filterBar     = $('#invFilters');
+    const sortMobile    = $('#invSortMobile');
+    const tableBody     = $('#dashTableBody');
+    const dashCards     = $('#dashCards');
+    const dashEmpty     = $('#dashEmpty');
+    const dashCount     = $('#dashCount');
     const statProducts  = $('#stat-products');
     const statEntries   = $('#stat-entries');
-    const statMonth     = $('#stat-month');
+    const statCategories = $('#stat-categories');
     const sidebarLoginBtn = $('#sidebarLoginBtn');
     const mobileLoginBtn  = $('#mobileLoginBtn');
 
@@ -89,64 +95,111 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             .replace(/\s+/g, '-');
     }
 
-    /** Title-case a typed category so "dairy" and "Dairy" stay one bucket. */
+    /** Title-case a typed label so "dairy" and "Dairy" stay one bucket. */
     function normaliseLabel(value) {
         return String(value).trim().replace(/\s+/g, ' ')
             .replace(/\b\w/g, (c) => c.toUpperCase());
     }
 
-    /** ISO date strings sort lexicographically — newest first. */
-    function compareDesc(a, b) {
-        return a < b ? 1 : a > b ? -1 : 0;
+    /**
+     * Purchase timestamp in epoch ms.
+     * Rows written before auto-timestamping carry an ISO date string instead;
+     * noon avoids the UTC-midnight rollover that shifts the day east of GMT.
+     */
+    function stampOf(entry) {
+        if (typeof entry.purchasedAt === 'number') return entry.purchasedAt;
+        const parsed = Date.parse(String(entry.purchaseDate) + 'T12:00:00');
+        return Number.isNaN(parsed) ? (entry.createdAt ?? 0) : parsed;
     }
 
-    /** Group purchases by productKey and derive price-comparison stats. */
-    function priceHistory(entries) {
-        const byProduct = new Map();
+    /** Price in rupees. `unitPrice` is the pre-rename field name. */
+    function priceOf(entry) {
+        return typeof entry.price === 'number' ? entry.price : (entry.unitPrice ?? 0);
+    }
 
+    /**
+     * Attach each entry's previous purchase of the same product.
+     * One pass per product, so the whole table is annotated in O(n log n).
+     */
+    function annotate(entries) {
+        const byProduct = new Map();
         for (const entry of entries) {
             const bucket = byProduct.get(entry.productKey) ?? [];
             byProduct.set(entry.productKey, [...bucket, entry]);
         }
 
-        return [...byProduct].map(([productKey, rows]) => {
-            // Newest first. createdAt breaks ties when two entries share a date.
-            const sorted = [...rows].sort((a, b) =>
-                compareDesc(a.purchaseDate, b.purchaseDate) || (b.createdAt - a.createdAt));
+        const previousOf = new Map();
+        for (const [, rows] of byProduct) {
+            const oldestFirst = [...rows].sort((a, b) => stampOf(a) - stampOf(b));
+            oldestFirst.forEach((entry, i) => {
+                if (i > 0) previousOf.set(entry.id, oldestFirst[i - 1]);
+            });
+        }
 
-            const prices = sorted.map(r => r.unitPrice);
-            const [latest, previous] = sorted;
-            const recent = prices.slice(0, 3);
-            const avg3 = recent.reduce((sum, p) => sum + p, 0) / recent.length;
-            const cheapest = sorted.reduce((best, r) => r.unitPrice < best.unitPrice ? r : best);
-
+        return entries.map((entry) => {
+            const previous = previousOf.get(entry.id) ?? null;
+            const price = priceOf(entry);
+            const was = previous ? priceOf(previous) : null;
             return {
-                productKey,
-                productName: latest.productName,
-                category: latest.category,
-                unit: latest.unit,
-                latest: latest.unitPrice,
-                latestDate: latest.purchaseDate,
-                latestStore: latest.store,
-                previous: previous?.unitPrice ?? null,
-                deltaPct: previous
-                    ? ((latest.unitPrice - previous.unitPrice) / previous.unitPrice) * 100
-                    : null,
-                min: Math.min(...prices),
-                max: Math.max(...prices),
-                avg3,
-                cheapestStore: cheapest.store,
-                count: sorted.length,
-                sparkline: prices.slice(0, 12).reverse(),
+                ...entry,
+                price,
+                stamp: stampOf(entry),
+                previous,
+                previousPrice: was,
+                previousStamp: previous ? stampOf(previous) : null,
+                deltaPct: was ? ((price - was) / was) * 100 : null,
             };
-        }).sort((a, b) => compareDesc(a.latestDate, b.latestDate));
+        });
     }
 
-    /** Price stats for one product, or null when never bought. */
-    function lastEntryFor(productKey) {
+    /** Every purchase of one product, newest first, plus summary stats. */
+    function historyFor(productKey) {
         if (!productKey) return null;
+
         const rows = purchases.filter(p => p.productKey === productKey);
-        return rows.length ? priceHistory(rows)[0] : null;
+        if (!rows.length) return null;
+
+        const newestFirst = [...rows].sort((a, b) => stampOf(b) - stampOf(a));
+        const prices = newestFirst.map(priceOf);
+        const recent = prices.slice(0, 3);
+        const cheapest = newestFirst.reduce((best, r) =>
+            priceOf(r) < priceOf(best) ? r : best);
+
+        return {
+            rows: newestFirst,
+            latest: newestFirst[0],
+            count: newestFirst.length,
+            min: Math.min(...prices),
+            max: Math.max(...prices),
+            avg3: recent.reduce((sum, p) => sum + p, 0) / recent.length,
+            cheapestStore: cheapest.store,
+            sparkline: prices.slice(0, 12).reverse(),
+        };
+    }
+
+    /** Search across product, category, and store. */
+    function matchesSearch(entry, term) {
+        if (!term) return true;
+        return [entry.productName, entry.category, entry.store]
+            .some(v => String(v ?? '').toLowerCase().includes(term));
+    }
+
+    function sortEntries(entries, key, dir) {
+        const factor = dir === 'asc' ? 1 : -1;
+        const value = {
+            product: e => e.productName.toLowerCase(),
+            category: e => String(e.category ?? '').toLowerCase(),
+            unit: e => String(e.unit ?? '').toLowerCase(),
+            price: e => e.price,
+            purchased: e => e.stamp,
+        }[key] ?? (e => e.stamp);
+
+        return [...entries].sort((a, b) => {
+            const x = value(a), y = value(b);
+            if (x < y) return -1 * factor;
+            if (x > y) return 1 * factor;
+            return stampOf(b) - stampOf(a); // stable-ish tiebreak: newest first
+        });
     }
 
     /** Seed values plus everything already used, deduped and sorted. */
@@ -159,7 +212,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     //  INIT
     // ═══════════════════════════════════════════════════════
     function init() {
-        dateInput.value = todayStr();
+        readStateFromUrl();
         addItemRow();
         bindEvents();
         initNavigation();
@@ -168,43 +221,140 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         if (new URLSearchParams(location.search).has('selfcheck')) selfCheck();
     }
 
+    /** Search, filter, and sort live in the URL so a view survives reload. */
+    function readStateFromUrl() {
+        const params = new URLSearchParams(location.search);
+        searchTerm = (params.get('q') || '').toLowerCase().trim();
+        activeCategory = params.get('cat') || 'All';
+
+        const [key, dir] = (params.get('sort') || 'purchased:desc').split(':');
+        sortKey = key || 'purchased';
+        sortDir = dir === 'asc' ? 'asc' : 'desc';
+
+        searchInput.value = params.get('q') || '';
+        sortMobile.value = `${sortKey}:${sortDir}`;
+    }
+
+    function writeStateToUrl() {
+        const params = new URLSearchParams();
+        if (searchTerm) params.set('q', searchTerm);
+        if (activeCategory !== 'All') params.set('cat', activeCategory);
+        if (sortKey !== 'purchased' || sortDir !== 'desc') params.set('sort', `${sortKey}:${sortDir}`);
+
+        const query = params.toString();
+        history.replaceState(null, '', query ? `?${query}` : location.pathname);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  TYPING-EFFECT PLACEHOLDER
+    // ═══════════════════════════════════════════════════════
+
+    /**
+     * Cycles an example product through the placeholder, one character at a
+     * time. Returns a stop function.
+     * setTimeout rather than rAF: this is a ~90ms cadence, and timers throttle
+     * in a hidden tab for free.
+     */
+    function typingPlaceholder(input, examples) {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            input.placeholder = `Type '${examples[0]}'...`;
+            return () => {};
+        }
+
+        let timer = null, word = 0, chars = 0, deleting = false;
+
+        const tick = () => {
+            const example = examples[word % examples.length];
+            chars += deleting ? -1 : 1;
+            input.placeholder = `Type '${example.slice(0, chars)}'...`;
+
+            let delay = deleting ? DELETE_MS : TYPE_MS;
+            if (!deleting && chars === example.length) {
+                deleting = true;
+                delay = HOLD_MS;
+            } else if (deleting && chars === 0) {
+                deleting = false;
+                word++;
+                delay = TYPE_MS * 2;
+            }
+            timer = setTimeout(tick, delay);
+        };
+
+        tick();
+        return () => { clearTimeout(timer); timer = null; };
+    }
+
+    /**
+     * Animate exactly one product field — the first empty one. Several fields
+     * typing at once is noise, and a moving placeholder under a live cursor
+     * reads as broken.
+     */
+    function refreshPlaceholderAnimation() {
+        const rows = [...itemRows.children];
+
+        for (const row of rows) {
+            const input = row.querySelector('.row-product');
+            const isTarget = row === rows.find(r => !r.querySelector('.row-product').value)
+                && document.activeElement !== input;
+
+            if (isTarget && !input._stopTyping) {
+                input._stopTyping = typingPlaceholder(input, PLACEHOLDER_EXAMPLES);
+            } else if (!isTarget && input._stopTyping) {
+                input._stopTyping();
+                input._stopTyping = null;
+                input.placeholder = '';
+            }
+        }
+    }
+
     // ═══════════════════════════════════════════════════════
     //  ITEM ROWS
     // ═══════════════════════════════════════════════════════
     function addItemRow(values = null) {
         const row = rowTemplate.content.firstElementChild.cloneNode(true);
+        const product = row.querySelector('.row-product');
 
         if (values) {
-            row.querySelector('.row-product').value = values.productName || '';
+            product.value = values.productName || '';
             row.querySelector('.row-category').value = values.category || '';
             row.querySelector('.row-unit').value = values.unit || '';
-            row.querySelector('.row-price').value = values.unitPrice ?? '';
+            row.querySelector('.row-price').value = priceOf(values) || '';
         }
 
-        row.querySelector('.row-product').addEventListener('input', () => onProductChange(row));
-        row.querySelector('.row-product').addEventListener('change', () => onProductChange(row));
-        row.querySelector('.row-price').addEventListener('input', updateTotalPreview);
+        product.addEventListener('input', () => {
+            stopTypingOn(product);
+            smartLookup(row);
+        });
+        product.addEventListener('change', () => smartLookup(row));
+        product.addEventListener('focus', () => stopTypingOn(product));
+        product.addEventListener('blur', refreshPlaceholderAnimation);
+        row.querySelector('.row-price').addEventListener('input', updateItemCount);
         row.querySelector('.row-remove').addEventListener('click', () => removeItemRow(row));
 
         itemRows.appendChild(row);
         refreshRowChrome();
+        refreshPlaceholderAnimation();
         return row;
+    }
+
+    function stopTypingOn(input) {
+        if (!input._stopTyping) return;
+        input._stopTyping();
+        input._stopTyping = null;
+        input.placeholder = '';
     }
 
     function removeItemRow(row) {
         // Never leave the form with nothing to fill in.
         if (itemRows.children.length === 1) {
-            clearRow(row);
+            row.querySelectorAll('input').forEach(i => { i.value = ''; });
+            row.querySelector('.row-lookup').classList.add('hidden');
         } else {
             row.remove();
         }
         refreshRowChrome();
-        updateTotalPreview();
-    }
-
-    function clearRow(row) {
-        row.querySelectorAll('input').forEach(i => { i.value = ''; });
-        row.querySelector('.row-hint').classList.add('hidden');
+        refreshPlaceholderAnimation();
+        updateItemCount();
     }
 
     /** Renumber rows, hide the remove button when only one row is left. */
@@ -229,36 +379,55 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         };
     }
 
-    function onProductChange(row) {
-        const hint = row.querySelector('.row-hint');
-        const last = lastEntryFor(slug(row.querySelector('.row-product').value));
+    function updateItemCount() {
+        const filled = [...itemRows.children]
+            .map(readRow)
+            .filter(r => parseFloat(r.price) > 0).length;
+        itemCount.textContent = filled ? `${filled} item${filled > 1 ? 's' : ''} ready` : '';
+    }
 
-        if (!last) {
-            hint.classList.add('hidden');
+    // ═══════════════════════════════════════════════════════
+    //  SMART LOOKUP
+    // ═══════════════════════════════════════════════════════
+    function smartLookup(row) {
+        const panel = row.querySelector('.row-lookup');
+        const history = historyFor(slug(row.querySelector('.row-product').value));
+
+        if (!history) {
+            panel.classList.add('hidden');
+            panel.innerHTML = '';
             return;
         }
 
-        // Only prefill blanks — never clobber something already typed.
+        // Prefill blanks only — never clobber something already typed.
         const categoryEl = row.querySelector('.row-category');
         const unitEl = row.querySelector('.row-unit');
-        if (!categoryEl.value) categoryEl.value = last.category;
-        if (!unitEl.value) unitEl.value = last.unit;
+        if (!categoryEl.value) categoryEl.value = history.latest.category || '';
+        if (!unitEl.value) unitEl.value = history.latest.unit || '';
 
-        hint.innerHTML = `Last <strong>₹${fmt(last.latest)}</strong>`
-            + (last.unit ? ` / ${escapeHtml(last.unit)}` : '')
-            + ` · ${formatDatePretty(last.latestDate)}`
-            + (last.latestStore ? ` · ${escapeHtml(last.latestStore)}` : '')
-            + ` · best ₹${fmt(last.min)} · avg3 ₹${fmt(last.avg3)}`;
-        hint.classList.remove('hidden');
-    }
+        const lines = history.rows.slice(0, LOOKUP_ROWS).map((entry, i) => `
+            <div class="flex items-baseline justify-between gap-sm text-xs">
+                <span class="font-bold text-on-surface-variant uppercase tracking-widest w-14 shrink-0">${i === 0 ? 'Last' : 'Before'}</span>
+                <span class="font-bold text-on-surface">₹${fmt(priceOf(entry))}${entry.unit ? ` <span class="font-normal text-on-surface-variant">/ ${escapeHtml(entry.unit)}</span>` : ''}</span>
+                <span class="text-on-surface-variant ml-auto">${formatStamp(stampOf(entry))}</span>
+                ${entry.store ? `<span class="text-on-surface-variant truncate max-w-[8rem]">${escapeHtml(entry.store)}</span>` : ''}
+            </div>`).join('');
 
-    function updateTotalPreview() {
-        const rows = [...itemRows.children].map(readRow);
-        const filled = rows.filter(r => parseFloat(r.price) > 0);
-        const total = filled.reduce((sum, r) => sum + parseFloat(r.price), 0);
-        totalPreview.textContent = filled.length
-            ? `${filled.length} item${filled.length > 1 ? 's' : ''} · ₹${fmt(total)}`
-            : '';
+        panel.innerHTML = `
+            <div class="flex items-center justify-between gap-sm">
+                <span class="text-[10px] font-bold text-on-surface uppercase tracking-widest">
+                    ${escapeHtml(history.latest.productName)} · bought ${history.count} ${history.count === 1 ? 'time' : 'times'}
+                </span>
+                <span class="text-on-surface-variant">${sparkline(history.sparkline)}</span>
+            </div>
+            <div class="flex flex-col gap-1">${lines}</div>
+            <div class="flex flex-wrap gap-x-md gap-y-1 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest border-t border-dashed border-outline-variant pt-sm">
+                <span>Low ₹${fmt(history.min)}</span>
+                <span>High ₹${fmt(history.max)}</span>
+                <span>Avg3 ₹${fmt(history.avg3)}</span>
+                ${history.cheapestStore ? `<span>Cheapest ${escapeHtml(history.cheapestStore)}</span>` : ''}
+            </div>`;
+        panel.classList.remove('hidden');
     }
 
     // ═══════════════════════════════════════════════════════
@@ -390,7 +559,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         $$('.nav-link').forEach(l => l.classList.toggle('active', l.dataset.page === page));
         $$('.bottom-nav-link').forEach(l => l.classList.toggle('active', l.dataset.page === page));
 
-        const titles = { log: 'Log', prices: 'Price History' };
+        const titles = { log: 'Log', dashboard: 'Dashboard' };
         const headerTitle = $('#headerPageTitle');
         if (headerTitle) headerTitle.textContent = titles[page] || '';
 
@@ -410,17 +579,42 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         });
 
         searchInput.addEventListener('input', (e) => {
-            searchTerm = e.target.value.toLowerCase().trim();
-            renderPrices();
+            clearTimeout(searchTimer);
+            const value = e.target.value.toLowerCase().trim();
+            searchTimer = setTimeout(() => {
+                searchTerm = value;
+                writeStateToUrl();
+                renderDashboard();
+            }, SEARCH_DEBOUNCE_MS);
         });
 
         filterBar.addEventListener('click', (e) => {
             const btn = e.target.closest('[data-cat]');
             if (!btn) return;
             activeCategory = btn.dataset.cat;
-            $$('#invFilters .filter-pill').forEach(p =>
-                p.classList.toggle('active', p.dataset.cat === activeCategory));
-            renderPrices();
+            writeStateToUrl();
+            renderFilters();
+            renderDashboard();
+        });
+
+        $$('.sort-btn').forEach(btn => btn.addEventListener('click', () => {
+            const key = btn.dataset.sort;
+            // Same column toggles direction; a new column starts descending.
+            if (sortKey === key) {
+                sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortKey = key;
+                sortDir = key === 'product' || key === 'category' || key === 'unit' ? 'asc' : 'desc';
+            }
+            sortMobile.value = `${sortKey}:${sortDir}`;
+            writeStateToUrl();
+            renderDashboard();
+        }));
+
+        sortMobile.addEventListener('change', (e) => {
+            [sortKey, sortDir] = e.target.value.split(':');
+            writeStateToUrl();
+            renderDashboard();
         });
 
         if (sidebarLoginBtn) sidebarLoginBtn.addEventListener('click', handleLoginClick);
@@ -432,8 +626,6 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     // ═══════════════════════════════════════════════════════
     function handleSubmit(e) {
         e.preventDefault();
-
-        if (!dateInput.value) return showToast('Purchase date required');
 
         const rows = [...itemRows.children].map(readRow);
         // A row with nothing in it is not an error — it is just an unused slot.
@@ -468,37 +660,36 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
     function buildEntry(row) {
         const existing = editingId ? purchases.find(p => p.id === editingId) : null;
-        const unitPrice = parseFloat(row.price);
+        // The timestamp is captured here, at save. There is no date input.
+        const now = Date.now();
 
         return {
             id: editingId || generateId(),
-            purchaseDate: dateInput.value,
+            purchasedAt: existing ? stampOf(existing) : now,
+            createdAt: existing?.createdAt ?? now,
             productKey: slug(row.productName),
             productName: row.productName,
             category: normaliseLabel(row.category),
             unit: row.unit,
-            quantity: FIXED_QUANTITY,
-            unitPrice,
-            totalPrice: unitPrice * FIXED_QUANTITY,
+            price: parseFloat(row.price),
             store: storeInput.value.trim(),
-            notes: '',
-            createdAt: existing?.createdAt ?? Date.now(),
         };
     }
 
     /** Message describing a suspicious price, or null when it looks normal. */
     function oddPrice(entry) {
-        const last = lastEntryFor(entry.productKey);
-        if (!last) return null;
-        const tooHigh = entry.unitPrice > last.latest * PRICE_SANITY_FACTOR;
-        const tooLow = entry.unitPrice < last.latest / PRICE_SANITY_FACTOR;
+        const history = historyFor(entry.productKey);
+        if (!history) return null;
+        const last = priceOf(history.latest);
+        const tooHigh = entry.price > last * PRICE_SANITY_FACTOR;
+        const tooLow = entry.price < last / PRICE_SANITY_FACTOR;
         if (!tooHigh && !tooLow) return null;
-        return `${entry.productName} ₹${fmt(entry.unitPrice)} vs last ₹${fmt(last.latest)}`;
+        return `${entry.productName} ₹${fmt(entry.price)} vs last ₹${fmt(last)}`;
     }
 
     async function commit(entries) {
         // Capture the comparison before the new rows land in `purchases`.
-        const previous = entries.map(e => lastEntryFor(e.productKey));
+        const previous = entries.map(e => historyFor(e.productKey));
         const wasEditing = Boolean(editingId);
 
         try {
@@ -521,15 +712,15 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
         if (entries.length === 1) {
             const [entry] = entries;
-            const [last] = previous;
-            if (!last) return `${entry.productName} logged — first entry`;
-            const delta = ((entry.unitPrice - last.latest) / last.latest) * 100;
+            const [history] = previous;
+            if (!history) return `${entry.productName} logged — first purchase`;
+            const last = priceOf(history.latest);
+            const delta = ((entry.price - last) / last) * 100;
             const dir = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat vs';
-            return `${entry.productName} ₹${fmt(entry.unitPrice)} — ${dir} ${Math.abs(delta).toFixed(1)}% from ₹${fmt(last.latest)}`;
+            return `${entry.productName} ₹${fmt(entry.price)} — ${dir} ${Math.abs(delta).toFixed(1)}% from ₹${fmt(last)}`;
         }
 
-        const total = entries.reduce((sum, e) => sum + e.totalPrice, 0);
-        return `${entries.length} items saved · ₹${fmt(total)}`;
+        return `${entries.length} items logged`;
     }
 
     function startEdit(id) {
@@ -539,7 +730,6 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         editingId = id;
         editIdInput.value = id;
         storeInput.value = entry.store || '';
-        dateInput.value = entry.purchaseDate;
 
         // Editing touches exactly one entry, so collapse to a single row.
         itemRows.innerHTML = '';
@@ -547,7 +737,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         addItemBtn.classList.add('hidden');
         cancelEditBtn.classList.remove('hidden');
         refreshRowChrome();
-        updateTotalPreview();
+        updateItemCount();
 
         navigate('log');
         form.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -557,13 +747,12 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         editingId = null;
         editIdInput.value = '';
         storeInput.value = '';
-        dateInput.value = todayStr();
         itemRows.innerHTML = '';
         addItemRow();
         addItemBtn.classList.remove('hidden');
         cancelEditBtn.classList.add('hidden');
         refreshRowChrome();
-        updateTotalPreview();
+        updateItemCount();
     }
 
     // ═══════════════════════════════════════════════════════
@@ -573,8 +762,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         renderDatalists();
         renderFilters();
         renderStats();
-        renderLog();
-        renderPrices();
+        renderDashboard();
     }
 
     function renderDatalists() {
@@ -593,7 +781,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
     function renderFilters() {
         const categories = ['All', ...suggestionsFor('category', SEED_CATEGORIES)];
-        // Rebuilding drops the active pill when its category disappears.
+        // A category can disappear when its last entry is deleted.
         if (!categories.includes(activeCategory)) activeCategory = 'All';
 
         filterBar.innerHTML = categories.map(c =>
@@ -602,49 +790,111 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     }
 
     function renderStats() {
-        const month = todayStr().slice(0, 7);
-        const monthSpend = purchases
-            .filter(p => String(p.purchaseDate || '').startsWith(month))
-            .reduce((sum, p) => sum + (p.totalPrice || 0), 0);
-
         statProducts.textContent = new Set(purchases.map(p => p.productKey)).size;
         statEntries.textContent = purchases.length;
-        statMonth.textContent = '₹' + fmt(monthSpend);
+        statCategories.textContent = new Set(purchases.map(p => p.category).filter(Boolean)).size;
     }
 
-    function renderLog() {
-        const recent = [...purchases]
-            .sort((a, b) => compareDesc(a.purchaseDate, b.purchaseDate) || (b.createdAt - a.createdAt))
-            .slice(0, RECENT_LIMIT);
+    function renderDashboard() {
+        const visible = sortEntries(
+            annotate(purchases).filter(e =>
+                (activeCategory === 'All' || e.category === activeCategory) &&
+                matchesSearch(e, searchTerm)),
+            sortKey, sortDir);
 
-        logEmpty.classList.toggle('hidden', recent.length > 0);
-        logList.innerHTML = recent.map(p => `
-            <div class="ticket-card p-md flex items-center justify-between gap-md">
-                <div class="flex flex-col gap-1 min-w-0">
-                    <span class="text-sm font-bold text-on-surface truncate">${escapeHtml(p.productName)}</span>
-                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
-                        ${escapeHtml(p.category)} · ${formatDatePretty(p.purchaseDate)}${p.store ? ' · ' + escapeHtml(p.store) : ''}
-                    </span>
-                </div>
-                <div class="flex items-center gap-md shrink-0">
-                    <div class="flex flex-col items-end gap-1">
-                        <span class="text-base font-bold text-on-surface">₹${fmt(p.unitPrice)}</span>
-                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">${escapeHtml(p.unit)}</span>
-                    </div>
-                    <div class="flex gap-xs">
-                        <button data-edit="${p.id}" class="p-xs text-on-surface-variant hover:text-primary transition-colors" aria-label="Edit ${escapeHtml(p.productName)}">
-                            <span class="material-symbols-outlined text-[20px]">edit</span>
-                        </button>
-                        <button data-del="${p.id}" class="p-xs text-on-surface-variant hover:text-error transition-colors" aria-label="Delete ${escapeHtml(p.productName)}">
-                            <span class="material-symbols-outlined text-[20px]">delete</span>
-                        </button>
-                    </div>
-                </div>
-            </div>`).join('');
+        dashEmpty.classList.toggle('hidden', visible.length > 0);
+        dashEmpty.textContent = purchases.length
+            ? 'No entries match this search or filter.'
+            : 'Nothing logged yet. Add an item on the Log tab.';
 
-        logList.querySelectorAll('[data-edit]').forEach(btn =>
+        dashCount.textContent = visible.length
+            ? `${visible.length} ${visible.length === 1 ? 'row' : 'rows'} · ${new Set(visible.map(e => e.productKey)).size} products`
+            : '';
+
+        renderSortIndicators();
+        tableBody.innerHTML = visible.map(tableRow).join('');
+        dashCards.innerHTML = visible.map(card).join('');
+        bindRowActions();
+    }
+
+    function renderSortIndicators() {
+        $$('.sort-btn').forEach(btn => {
+            const active = btn.dataset.sort === sortKey;
+            const arrow = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+            btn.textContent = btn.dataset.sort === 'purchased' ? 'Purchased' + arrow
+                : btn.dataset.sort.charAt(0).toUpperCase() + btn.dataset.sort.slice(1) + arrow;
+            btn.classList.toggle('text-on-surface', active);
+        });
+    }
+
+    function deltaMarkup(entry) {
+        if (entry.deltaPct === null) return '<span class="text-on-surface-variant">first purchase</span>';
+        const up = entry.deltaPct > 0;
+        const flat = entry.deltaPct === 0;
+        const arrow = flat ? '—' : up ? '▲' : '▼';
+        const tone = flat ? 'text-on-surface-variant' : up ? 'text-error' : 'text-secondary';
+        return `<span class="${tone} font-bold">${arrow} ${Math.abs(entry.deltaPct).toFixed(1)}%</span>
+                <span class="text-on-surface-variant">· was ₹${fmt(entry.previousPrice)} on ${formatStamp(entry.previousStamp, true)}</span>`;
+    }
+
+    function tableRow(entry) {
+        return `
+        <tr class="border-b border-outline-variant align-top">
+            <td class="py-sm pr-md">
+                <div class="font-bold text-on-surface">${escapeHtml(entry.productName)}</div>
+                <div class="text-[11px] flex flex-wrap gap-x-1">${deltaMarkup(entry)}</div>
+            </td>
+            <td class="py-sm px-md text-on-surface-variant">${escapeHtml(entry.category)}</td>
+            <td class="py-sm px-md text-on-surface-variant">${escapeHtml(entry.unit)}</td>
+            <td class="py-sm px-md text-right font-bold text-on-surface whitespace-nowrap">₹${fmt(entry.price)}</td>
+            <td class="py-sm px-md text-on-surface-variant whitespace-nowrap">
+                ${formatStamp(entry.stamp)}
+                ${entry.store ? `<div class="text-[11px]">${escapeHtml(entry.store)}</div>` : ''}
+            </td>
+            <td class="py-sm pl-md">
+                <div class="flex gap-xs justify-end">
+                    <button data-edit="${entry.id}" class="p-xs text-on-surface-variant hover:text-primary transition-colors" aria-label="Edit ${escapeHtml(entry.productName)}">
+                        <span class="material-symbols-outlined text-[18px]">edit</span>
+                    </button>
+                    <button data-del="${entry.id}" class="p-xs text-on-surface-variant hover:text-error transition-colors" aria-label="Delete ${escapeHtml(entry.productName)}">
+                        <span class="material-symbols-outlined text-[18px]">delete</span>
+                    </button>
+                </div>
+            </td>
+        </tr>`;
+    }
+
+    function card(entry) {
+        return `
+        <div class="ticket-card p-md flex flex-col gap-xs">
+            <div class="flex items-start justify-between gap-sm">
+                <span class="text-sm font-bold text-on-surface min-w-0 truncate">${escapeHtml(entry.productName)}</span>
+                <span class="text-base font-bold text-on-surface shrink-0">₹${fmt(entry.price)}</span>
+            </div>
+            <div class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
+                ${escapeHtml(entry.category)} · ${escapeHtml(entry.unit)}
+            </div>
+            <div class="text-[11px] text-on-surface-variant">
+                ${formatStamp(entry.stamp)}${entry.store ? ' · ' + escapeHtml(entry.store) : ''}
+            </div>
+            <div class="flex items-center justify-between gap-sm pt-xs border-t border-dashed border-outline-variant">
+                <div class="text-[11px] flex flex-wrap gap-x-1">${deltaMarkup(entry)}</div>
+                <div class="flex gap-xs shrink-0">
+                    <button data-edit="${entry.id}" class="p-xs text-on-surface-variant hover:text-primary transition-colors" aria-label="Edit ${escapeHtml(entry.productName)}">
+                        <span class="material-symbols-outlined text-[18px]">edit</span>
+                    </button>
+                    <button data-del="${entry.id}" class="p-xs text-on-surface-variant hover:text-error transition-colors" aria-label="Delete ${escapeHtml(entry.productName)}">
+                        <span class="material-symbols-outlined text-[18px]">delete</span>
+                    </button>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    function bindRowActions() {
+        $$('[data-edit]').forEach(btn =>
             btn.addEventListener('click', () => startEdit(btn.dataset.edit)));
-        logList.querySelectorAll('[data-del]').forEach(btn =>
+        $$('[data-del]').forEach(btn =>
             btn.addEventListener('click', () => showConfirm('Delete this entry?', async () => {
                 try {
                     await removeEntry(btn.dataset.del);
@@ -654,43 +904,6 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                     showToast('Delete failed: ' + err.message);
                 }
             })));
-    }
-
-    function renderPrices() {
-        const rows = priceHistory(purchases).filter(r =>
-            (activeCategory === 'All' || r.category === activeCategory) &&
-            (!searchTerm || r.productName.toLowerCase().includes(searchTerm)));
-
-        priceEmpty.classList.toggle('hidden', rows.length > 0);
-        priceList.innerHTML = rows.map(r => {
-            const delta = r.deltaPct === null ? '' : `
-                <span class="text-[11px] font-bold ${r.deltaPct > 0 ? 'text-error' : 'text-secondary'}">
-                    ${r.deltaPct > 0 ? '▲' : r.deltaPct < 0 ? '▼' : '—'} ${Math.abs(r.deltaPct).toFixed(1)}%
-                </span>`;
-            return `
-            <div class="ticket-card p-md flex flex-col gap-sm">
-                <div class="flex items-start justify-between gap-md">
-                    <div class="flex flex-col gap-1 min-w-0">
-                        <span class="text-sm font-bold text-on-surface truncate">${escapeHtml(r.productName)}</span>
-                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">${escapeHtml(r.category)} · ${escapeHtml(r.unit)} · ${r.count} ${r.count === 1 ? 'entry' : 'entries'}</span>
-                    </div>
-                    <div class="flex items-center gap-sm shrink-0">
-                        <span class="text-on-surface-variant">${sparkline(r.sparkline)}</span>
-                        <div class="flex flex-col items-end gap-1">
-                            <span class="text-base font-bold text-on-surface">₹${fmt(r.latest)}</span>
-                            ${delta}
-                        </div>
-                    </div>
-                </div>
-                <div class="w-full border-b border-dashed border-outline-variant"></div>
-                <div class="flex flex-wrap gap-x-md gap-y-1 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
-                    <span>Range ₹${fmt(r.min)}–₹${fmt(r.max)}</span>
-                    <span>Avg3 ₹${fmt(r.avg3)}</span>
-                    ${r.cheapestStore ? `<span>Best ${escapeHtml(r.cheapestStore)}</span>` : ''}
-                    <span class="ml-auto normal-case tracking-normal">Last bought ${formatDatePretty(r.latestDate)} at ₹${fmt(r.latest)}</span>
-                </div>
-            </div>`;
-        }).join('');
     }
 
     function sparkline(values) {
@@ -713,17 +926,16 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     }
 
-    function todayStr() {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
-
-    function formatDatePretty(dateStr) {
-        if (!dateStr) return '—';
-        const [, m, d] = String(dateStr).split('-').map(Number);
+    /** "28 Aug, 12:45" — or "28 Aug" when only the day matters. */
+    function formatStamp(ms, dateOnly = false) {
+        if (!ms) return '—';
+        const d = new Date(ms);
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        return `${d} ${months[m - 1] || ''}`.trim();
+        const day = `${d.getDate()} ${months[d.getMonth()]}`;
+        if (dateOnly) return day;
+        const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        return `${day}, ${time}`;
     }
 
     function fmt(n) {
@@ -771,23 +983,36 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     // ponytail: one self-check, covers the ways the pure logic actually breaks.
     // Run inventory.html?selfcheck=1 and watch the console.
     function selfCheck() {
+        const day = (n) => new Date(2026, 7, n, 12).getTime();
         const rows = [
-            { productKey: 'milk', productName: 'Milk', category: 'Dairy', unit: '1L',
-              unitPrice: 30, purchaseDate: '2026-08-12', createdAt: 1, store: 'DMart' },
-            { productKey: 'milk', productName: 'Milk', category: 'Dairy', unit: '1L',
-              unitPrice: 32, purchaseDate: '2026-08-28', createdAt: 2, store: 'Local' },
-            { productKey: 'rice', productName: 'Rice', category: 'Grains', unit: '5kg',
-              unitPrice: 60, purchaseDate: '2026-08-05', createdAt: 3, store: 'DMart' },
+            { id: 'a', productKey: 'milk', productName: 'Milk', category: 'Dairy', unit: '1L',
+              price: 30, purchasedAt: day(12), createdAt: 1, store: 'DMart' },
+            { id: 'b', productKey: 'milk', productName: 'Milk', category: 'Dairy', unit: '1L',
+              price: 32, purchasedAt: day(28), createdAt: 2, store: 'Local' },
+            { id: 'c', productKey: 'rice', productName: 'Rice', category: 'Grains', unit: '5kg',
+              price: 60, purchasedAt: day(5), createdAt: 3, store: 'DMart' },
+            // Pre-rename row: ISO date + unitPrice, no purchasedAt.
+            { id: 'd', productKey: 'dal', productName: 'Dal', category: 'Pantry', unit: '1kg',
+              unitPrice: 142, purchaseDate: '2026-08-24', createdAt: 4, store: 'DMart' },
         ];
-        const out = priceHistory(rows);
-        const milk = out.find(r => r.productKey === 'milk');
-        const rice = out.find(r => r.productKey === 'rice');
 
-        console.assert(milk.latest === 32, 'newest entry must win regardless of input order');
-        console.assert(Math.abs(milk.deltaPct - 6.667) < 0.01, 'delta% wrong');
-        console.assert(milk.cheapestStore === 'DMart', 'cheapest store wrong');
-        console.assert(milk.min === 30 && milk.max === 32, 'range wrong');
+        const annotated = annotate(rows);
+        const newMilk = annotated.find(e => e.id === 'b');
+        const oldMilk = annotated.find(e => e.id === 'a');
+        const rice = annotated.find(e => e.id === 'c');
+        const legacy = annotated.find(e => e.id === 'd');
+
+        console.assert(Math.abs(newMilk.deltaPct - 6.667) < 0.01, 'delta% wrong');
+        console.assert(newMilk.previousPrice === 30, 'previous price wrong');
+        console.assert(oldMilk.deltaPct === null, 'oldest entry has no previous');
         console.assert(rice.deltaPct === null, 'single entry must not divide by zero');
+        console.assert(legacy.price === 142, 'legacy unitPrice must be read');
+        console.assert(new Date(legacy.stamp).getDate() === 24, 'legacy date must not roll back a day');
+
+        const sorted = sortEntries(annotated, 'price', 'desc');
+        console.assert(sorted[0].id === 'd', 'price sort wrong');
+        console.assert(sortEntries(annotated, 'purchased', 'desc')[0].id === 'b', 'date sort wrong');
+        console.assert(matchesSearch(rows[0], 'dmart'), 'search must cover store');
         console.assert(slug('  Amul  Milk!! ') === 'amul-milk', 'slug normalisation wrong');
         console.assert(normaliseLabel('  dry   fruits ') === 'Dry Fruits', 'label normalisation wrong');
         console.log('inventory self-check done');

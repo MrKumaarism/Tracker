@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="description" content="Track grocery and household purchases, compare unit prices over time, and see what got more expensive. Works offline as a PWA.">
+    <meta name="description" content="A personal price-history database. Log what you buy, see what it used to cost, and compare before you buy again.">
     <meta name="theme-color" content="#2d2d2d">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <title>Inventory — Purchase &amp; Price Tracker</title>
+    <title>Inventory — Product Price History</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/svg+xml" href="icons/favicon.svg">
     <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -104,9 +104,9 @@
                 <span class="material-symbols-outlined mr-md">add_shopping_cart</span>
                 <span class="text-xs font-semibold tracking-wider uppercase">Log</span>
             </a>
-            <a class="nav-link flex items-center px-md py-sm rounded-xl transition-colors cursor-pointer" data-page="prices">
-                <span class="material-symbols-outlined mr-md">trending_up</span>
-                <span class="text-xs font-semibold tracking-wider uppercase">Price History</span>
+            <a class="nav-link flex items-center px-md py-sm rounded-xl transition-colors cursor-pointer" data-page="dashboard">
+                <span class="material-symbols-outlined mr-md">table_rows</span>
+                <span class="text-xs font-semibold tracking-wider uppercase">Dashboard</span>
             </a>
             <div class="mt-auto"></div>
             <!-- App switcher -->
@@ -159,7 +159,7 @@
             <!-- Section tabs -->
             <nav class="tab-rail" aria-label="Sections">
                 <a class="tab nav-link active" data-page="log" style="--tab-color: #a8d8ea">Log</a>
-                <a class="tab nav-link" data-page="prices" style="--tab-color: #ffe6a7">Prices</a>
+                <a class="tab nav-link" data-page="dashboard" style="--tab-color: #ffe6a7">Data</a>
             </nav>
 
         <!-- ═══════ PAGES ═══════ -->
@@ -171,7 +171,7 @@
                 <header class="pt-lg pb-md flex flex-col md:flex-row md:items-end justify-between gap-lg">
                     <div class="flex flex-col gap-xs">
                         <h1 class="font-display text-3xl font-bold text-on-surface">Quick Entry</h1>
-                        <p class="text-xs text-on-surface-variant">Log the whole trip before you unpack the bags.</p>
+                        <p class="text-xs text-on-surface-variant">Logged the moment you save. No date to fill in.</p>
                     </div>
                     <div class="flex flex-wrap gap-lg">
                         <div class="flex flex-col">
@@ -183,30 +183,22 @@
                             <span id="stat-entries" class="font-display text-2xl font-bold text-on-surface">0</span>
                         </div>
                         <div class="flex flex-col">
-                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">This Month</span>
-                            <span id="stat-month" class="font-display text-2xl font-bold text-on-surface">₹0</span>
+                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Categories</span>
+                            <span id="stat-categories" class="font-display text-2xl font-bold text-on-surface">0</span>
                         </div>
                     </div>
                 </header>
 
-                <!-- ─── Entry form: shared trip details + one row per item ─── -->
+                <!-- ─── Entry form: shared store + one row per item ─── -->
                 <form id="invForm" class="bg-surface-container-lowest border border-outline-variant rounded-lg p-md lg:p-lg flex flex-col gap-md" autocomplete="off">
                     <input type="hidden" id="invEditId">
 
-                    <!-- Shared across every item in this batch -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-sm">
-                        <label class="flex flex-col gap-xs min-w-0">
-                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Store <span class="normal-case tracking-normal font-normal">(optional)</span></span>
-                            <input id="invStore" type="text" list="storeList" placeholder="DMart"
-                                   class="w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
-                            <datalist id="storeList"></datalist>
-                        </label>
-                        <label class="flex flex-col gap-xs min-w-0">
-                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Purchase Date</span>
-                            <input id="invDate" type="date" required
-                                   class="w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
-                        </label>
-                    </div>
+                    <label class="flex flex-col gap-xs min-w-0">
+                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Store <span class="normal-case tracking-normal font-normal">(optional, applies to every item)</span></span>
+                        <input id="invStore" type="text" list="storeList" placeholder="DMart"
+                               class="w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
+                        <datalist id="storeList"></datalist>
+                    </label>
 
                     <!-- Item rows -->
                     <div id="itemRows" class="flex flex-col gap-sm"></div>
@@ -218,7 +210,7 @@
                     </button>
 
                     <div class="flex items-center justify-between gap-md pt-xs border-t border-dashed border-outline-variant">
-                        <span id="invTotalPreview" class="text-xs font-bold text-on-surface-variant"></span>
+                        <span id="invItemCount" class="text-xs font-bold text-on-surface-variant"></span>
                         <div class="flex gap-sm">
                             <button type="button" id="invCancelEdit" class="hidden px-lg py-sm rounded-full bg-surface-container text-on-surface-variant text-xs font-bold uppercase tracking-wide">Cancel</button>
                             <button type="submit" class="px-xl py-sm rounded-full bg-primary text-on-primary text-xs font-bold uppercase tracking-wide shadow-md hover:shadow-lg transition-all">
@@ -246,10 +238,11 @@
                         <label class="flex flex-col gap-xs min-w-0">
                             <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Product</span>
                             <input type="text" class="row-product w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary"
-                                   list="productList" placeholder="Dhaniya">
+                                   list="productList">
                         </label>
 
-                        <p class="row-hint hidden text-xs text-on-surface-variant bg-surface-container-high rounded px-md py-sm"></p>
+                        <!-- Smart lookup: filled in when the typed product already exists -->
+                        <div class="row-lookup hidden bg-surface-container-high rounded p-md flex flex-col gap-sm"></div>
 
                         <div class="grid grid-cols-2 gap-xs sm:gap-sm">
                             <label class="flex flex-col gap-xs min-w-0">
@@ -271,35 +264,59 @@
                         </label>
                     </div>
                 </template>
-
-                <!-- ─── Recent entries ─── -->
-                <div class="flex flex-col gap-md">
-                    <h2 class="font-display text-xl font-bold text-on-surface">Recent</h2>
-                    <div id="logList" class="flex flex-col gap-sm"></div>
-                    <p id="logEmpty" class="text-xs text-on-surface-variant py-lg text-center">
-                        No purchases logged yet. Add one above.
-                    </p>
-                </div>
             </section>
 
-            <!-- ═══════ PAGE: PRICES ═══════ -->
-            <section id="page-prices" class="page-section hidden flex flex-col w-full gap-lg">
+            <!-- ═══════ PAGE: DASHBOARD ═══════ -->
+            <section id="page-dashboard" class="page-section hidden flex flex-col w-full gap-lg">
 
                 <header class="pt-lg pb-xs flex flex-col gap-xs">
-                    <h1 class="font-display text-3xl font-bold text-on-surface">Price History</h1>
-                    <p class="text-xs text-on-surface-variant">Latest price against what you used to pay.</p>
+                    <h1 class="font-display text-3xl font-bold text-on-surface">Dashboard</h1>
+                    <p class="text-xs text-on-surface-variant">Every purchase, with what it cost you last time.</p>
                 </header>
 
+                <!-- Search + filters -->
                 <div class="sticky top-16 z-10 bg-surface/90 backdrop-blur-sm py-sm flex flex-col gap-sm">
-                    <input id="invSearch" type="search" placeholder="Search products"
+                    <input id="invSearch" type="search" placeholder="Search any product, category, or store"
                            class="w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
                     <div id="invFilters" class="flex gap-xs overflow-x-auto pb-xs"></div>
+                    <!-- Sorting on mobile, where table headers do not exist -->
+                    <label class="md:hidden flex items-center gap-sm">
+                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest shrink-0">Sort</span>
+                        <select id="invSortMobile" class="flex-1 bg-surface-container border border-outline-variant rounded px-sm py-xs text-sm text-on-surface focus:outline-none focus:border-secondary">
+                            <option value="purchased:desc">Newest first</option>
+                            <option value="purchased:asc">Oldest first</option>
+                            <option value="price:desc">Price high to low</option>
+                            <option value="price:asc">Price low to high</option>
+                            <option value="product:asc">Product A–Z</option>
+                            <option value="category:asc">Category A–Z</option>
+                        </select>
+                    </label>
                 </div>
 
-                <div id="priceList" class="flex flex-col gap-sm"></div>
-                <p id="priceEmpty" class="text-xs text-on-surface-variant py-lg text-center">
-                    Nothing to compare yet. Log the same product twice to see a trend.
+                <!-- Desktop table -->
+                <div class="hidden md:block overflow-x-auto">
+                    <table class="w-full border-collapse text-sm">
+                        <thead>
+                            <tr class="border-b-2 border-outline-variant">
+                                <th class="text-left py-sm pr-md"><button type="button" data-sort="product" class="sort-btn text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:text-on-surface transition-colors">Product</button></th>
+                                <th class="text-left py-sm px-md"><button type="button" data-sort="category" class="sort-btn text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:text-on-surface transition-colors">Category</button></th>
+                                <th class="text-left py-sm px-md"><button type="button" data-sort="unit" class="sort-btn text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:text-on-surface transition-colors">Unit</button></th>
+                                <th class="text-right py-sm px-md"><button type="button" data-sort="price" class="sort-btn text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:text-on-surface transition-colors">Price</button></th>
+                                <th class="text-left py-sm px-md"><button type="button" data-sort="purchased" class="sort-btn text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:text-on-surface transition-colors">Purchased</button></th>
+                                <th class="py-sm pl-md w-20"><span class="sr-only">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashTableBody"></tbody>
+                    </table>
+                </div>
+
+                <!-- Mobile cards -->
+                <div id="dashCards" class="md:hidden flex flex-col gap-sm"></div>
+
+                <p id="dashEmpty" class="text-xs text-on-surface-variant py-lg text-center">
+                    Nothing logged yet. Add an item on the Log tab.
                 </p>
+                <p id="dashCount" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-right"></p>
             </section>
 
         </main>
@@ -311,9 +328,9 @@
                 <span class="material-symbols-outlined">add_shopping_cart</span>
                 <span class="text-[10px] font-semibold">Log</span>
             </a>
-            <a class="bottom-nav-link flex flex-col items-center gap-xs transition-colors cursor-pointer" data-page="prices">
-                <span class="material-symbols-outlined">trending_up</span>
-                <span class="text-[10px] font-semibold">Prices</span>
+            <a class="bottom-nav-link flex flex-col items-center gap-xs transition-colors cursor-pointer" data-page="dashboard">
+                <span class="material-symbols-outlined">table_rows</span>
+                <span class="text-[10px] font-semibold">Data</span>
             </a>
             <a href="index.html" class="login-link flex flex-col items-center gap-xs transition-colors cursor-pointer">
                 <span class="material-symbols-outlined">local_gas_station</span>
