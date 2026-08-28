@@ -3,7 +3,7 @@
    Network-first for pages, stale-while-revalidate for assets
    ═══════════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'fuel-tracker-v11';
+const CACHE_NAME = 'fuel-tracker-v12';
 
 const APP_SHELL = [
     './',
@@ -15,6 +15,7 @@ const APP_SHELL = [
     './inventory.js',
     './manifest.json',
     './icons/favicon.svg',
+    './icons/apple-touch-icon-180.png',
     './icons/icon-192.png',
     './icons/icon-512.png',
 ];

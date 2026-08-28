@@ -10,7 +10,10 @@
     <title>Fuel Tracker — Mileage &amp; Expense Logger</title>
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/svg+xml" href="icons/favicon.svg">
-    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <!-- iOS ignores the manifest and uses these. The filename is versioned
+         because iOS caches the home-screen icon by URL and never refetches. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon-180.png?v=2">
+    <meta name="apple-mobile-web-app-title" content="Fuel">
 
     <!-- Tailwind CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
