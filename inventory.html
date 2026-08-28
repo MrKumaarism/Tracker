@@ -171,7 +171,7 @@
                 <header class="pt-lg pb-md flex flex-col md:flex-row md:items-end justify-between gap-lg">
                     <div class="flex flex-col gap-xs">
                         <h1 class="font-display text-3xl font-bold text-on-surface">Quick Entry</h1>
-                        <p class="text-xs text-on-surface-variant">Log it before you unpack the bags.</p>
+                        <p class="text-xs text-on-surface-variant">Log the whole trip before you unpack the bags.</p>
                     </div>
                     <div class="flex flex-wrap gap-lg">
                         <div class="flex flex-col">
@@ -189,70 +189,35 @@
                     </div>
                 </header>
 
-                <!-- ─── Entry form (the one popup) ─── -->
+                <!-- ─── Entry form: shared trip details + one row per item ─── -->
                 <form id="invForm" class="bg-surface-container-lowest border border-outline-variant rounded-lg p-md lg:p-lg flex flex-col gap-md" autocomplete="off">
                     <input type="hidden" id="invEditId">
 
-                    <!-- Product -->
-                    <label class="flex flex-col gap-xs">
-                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Product</span>
-                        <input id="invProduct" list="productList" type="text" required placeholder="Amul Milk 1L"
-                               class="bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
-                        <datalist id="productList"></datalist>
-                    </label>
-
-                    <!-- Last price recall -->
-                    <p id="lastPriceHint" class="hidden text-xs text-on-surface-variant bg-surface-container-high rounded px-md py-sm"></p>
-
-                    <!-- Category -->
-                    <label class="flex flex-col gap-xs">
-                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Category</span>
-                        <select id="invCategory" class="bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary"></select>
-                    </label>
-
-                    <!-- Qty / Unit / Price on one row -->
-                    <div class="grid grid-cols-3 gap-xs sm:gap-sm">
+                    <!-- Shared across every item in this batch -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-sm">
                         <label class="flex flex-col gap-xs min-w-0">
-                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Qty</span>
-                            <input id="invQty" type="number" inputmode="decimal" step="any" min="0" value="1" required
-                                   class="w-full bg-surface-container border border-outline-variant rounded px-sm sm:px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
+                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Store <span class="normal-case tracking-normal font-normal">(optional)</span></span>
+                            <input id="invStore" type="text" list="storeList" placeholder="DMart"
+                                   class="w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
+                            <datalist id="storeList"></datalist>
                         </label>
                         <label class="flex flex-col gap-xs min-w-0">
-                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Unit</span>
-                            <select id="invUnit" class="w-full bg-surface-container border border-outline-variant rounded px-sm sm:px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary"></select>
-                        </label>
-                        <label class="flex flex-col gap-xs min-w-0">
-                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">₹ / Unit</span>
-                            <input id="invPrice" type="number" inputmode="decimal" step="any" min="0" required placeholder="32"
-                                   class="w-full bg-surface-container border border-outline-variant rounded px-sm sm:px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
-                        </label>
-                    </div>
-
-                    <!-- Store -->
-                    <label class="flex flex-col gap-xs">
-                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Store <span class="normal-case tracking-normal font-normal">(optional)</span></span>
-                        <input id="invStore" type="text" placeholder="DMart"
-                               class="bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
-                    </label>
-
-                    <!-- Date, collapsed by default -->
-                    <button type="button" id="toggleDate" class="self-start text-[10px] font-bold text-on-surface-variant uppercase tracking-widest underline underline-offset-4">
-                        Date &amp; notes
-                    </button>
-                    <div id="dateRow" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-sm">
-                        <label class="flex flex-col gap-xs">
                             <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Purchase Date</span>
                             <input id="invDate" type="date" required
-                                   class="bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
-                        </label>
-                        <label class="flex flex-col gap-xs">
-                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Notes</span>
-                            <input id="invNotes" type="text" placeholder="sale / bulk pack"
-                                   class="bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
+                                   class="w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
                         </label>
                     </div>
 
-                    <div class="flex items-center justify-between gap-md pt-xs">
+                    <!-- Item rows -->
+                    <div id="itemRows" class="flex flex-col gap-sm"></div>
+
+                    <button type="button" id="addItemBtn"
+                            class="flex items-center justify-center gap-xs w-full py-sm rounded border-2 border-dashed border-outline-variant text-on-surface-variant text-[11px] font-bold uppercase tracking-widest hover:border-secondary hover:text-secondary transition-colors">
+                        <span class="material-symbols-outlined text-[18px]">add</span>
+                        Add item
+                    </button>
+
+                    <div class="flex items-center justify-between gap-md pt-xs border-t border-dashed border-outline-variant">
                         <span id="invTotalPreview" class="text-xs font-bold text-on-surface-variant"></span>
                         <div class="flex gap-sm">
                             <button type="button" id="invCancelEdit" class="hidden px-lg py-sm rounded-full bg-surface-container text-on-surface-variant text-xs font-bold uppercase tracking-wide">Cancel</button>
@@ -262,6 +227,50 @@
                         </div>
                     </div>
                 </form>
+
+                <!-- Shared suggestion lists, filled from past entries -->
+                <datalist id="productList"></datalist>
+                <datalist id="categoryList"></datalist>
+                <datalist id="unitList"></datalist>
+
+                <!-- One item row. Category and unit are free text with suggestions. -->
+                <template id="itemRowTemplate">
+                    <div class="item-row bg-surface-container-low border border-outline-variant rounded p-md flex flex-col gap-sm">
+                        <div class="flex items-center justify-between">
+                            <span class="row-label text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Item</span>
+                            <button type="button" class="row-remove p-xs -m-xs text-on-surface-variant hover:text-error transition-colors" aria-label="Remove item">
+                                <span class="material-symbols-outlined text-[18px]">close</span>
+                            </button>
+                        </div>
+
+                        <label class="flex flex-col gap-xs min-w-0">
+                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Product</span>
+                            <input type="text" class="row-product w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary"
+                                   list="productList" placeholder="Dhaniya">
+                        </label>
+
+                        <p class="row-hint hidden text-xs text-on-surface-variant bg-surface-container-high rounded px-md py-sm"></p>
+
+                        <div class="grid grid-cols-2 gap-xs sm:gap-sm">
+                            <label class="flex flex-col gap-xs min-w-0">
+                                <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Category</span>
+                                <input type="text" class="row-category w-full bg-surface-container border border-outline-variant rounded px-sm sm:px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary"
+                                       list="categoryList" placeholder="Produce">
+                            </label>
+                            <label class="flex flex-col gap-xs min-w-0">
+                                <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Unit</span>
+                                <input type="text" class="row-unit w-full bg-surface-container border border-outline-variant rounded px-sm sm:px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary"
+                                       list="unitList" placeholder="100g">
+                            </label>
+                        </div>
+
+                        <label class="flex flex-col gap-xs min-w-0">
+                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Price ₹</span>
+                            <input type="number" inputmode="decimal" step="any" min="0" placeholder="250"
+                                   class="row-price w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
+                        </label>
+                    </div>
+                </template>
 
                 <!-- ─── Recent entries ─── -->
                 <div class="flex flex-col gap-md">
@@ -278,7 +287,7 @@
 
                 <header class="pt-lg pb-xs flex flex-col gap-xs">
                     <h1 class="font-display text-3xl font-bold text-on-surface">Price History</h1>
-                    <p class="text-xs text-on-surface-variant">Latest unit price against what you used to pay.</p>
+                    <p class="text-xs text-on-surface-variant">Latest price against what you used to pay.</p>
                 </header>
 
                 <div class="sticky top-16 z-10 bg-surface/90 backdrop-blur-sm py-sm flex flex-col gap-sm">
@@ -318,7 +327,7 @@
     </div>
 
     <!-- ═══════ Toast ═══════ -->
-    <div id="toast" class="fixed bottom-20 lg:bottom-8 left-1/2 -translate-x-1/2 translate-y-24 opacity-0 bg-inverse-surface text-inverse-on-surface px-lg py-md rounded-xl shadow-lg z-[999] text-sm font-medium transition-all duration-300 pointer-events-none whitespace-nowrap"></div>
+    <div id="toast" class="fixed bottom-20 lg:bottom-8 left-1/2 -translate-x-1/2 translate-y-24 opacity-0 bg-inverse-surface text-inverse-on-surface px-lg py-md rounded-xl shadow-lg z-[999] text-sm font-medium transition-all duration-300 pointer-events-none max-w-[90vw] text-center"></div>
 
     <!-- ═══════ Confirm Dialog ═══════ -->
     <div id="confirmOverlay" class="hidden fixed inset-0 bg-black/50 z-[500] flex items-center justify-center backdrop-blur-sm animate-fade-in">

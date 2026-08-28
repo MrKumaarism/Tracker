@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, writeBatch, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 // ponytail: config duplicated from app.js on purpose — fuel tracker stays untouched.
 const firebaseConfig = {
@@ -28,12 +28,16 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
     // ─── Constants ───
     const LS_KEY = 'inventory_purchases';
-    const CATEGORIES = ['Produce', 'Dairy', 'Grains', 'Meat', 'Pantry', 'Frozen',
-                        'Beverages', 'Household', 'Personal Care', 'Other'];
-    const UNITS = ['kg', 'g', 'L', 'ml', 'piece', 'pack'];
+    // Seeds for the suggestion lists. Both fields are free text — anything you
+    // type becomes a suggestion for next time.
+    const SEED_CATEGORIES = ['Produce', 'Dairy', 'Grains', 'Meat', 'Pantry', 'Frozen',
+                             'Beverages', 'Household', 'Personal Care', 'Other'];
+    const SEED_UNITS = ['piece', 'pack', '100g', '250g', '500g', 'kg', '250ml', '500ml', 'L', 'dozen'];
     // Warn (never block) when a price is wildly off the last one — usually a wrong unit.
     const PRICE_SANITY_FACTOR = 2;
     const RECENT_LIMIT = 30;
+    // Quantity is fixed: one line per item, the unit carries the pack size.
+    const FIXED_QUANTITY = 1;
 
     // ─── State ───
     let purchases = [];
@@ -50,26 +54,24 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     // ─── DOM Refs ───
     const form          = $('#invForm');
     const editIdInput   = $('#invEditId');
-    const productInput  = $('#invProduct');
-    const categorySel   = $('#invCategory');
-    const qtyInput      = $('#invQty');
-    const unitSel       = $('#invUnit');
-    const priceInput    = $('#invPrice');
     const storeInput    = $('#invStore');
     const dateInput     = $('#invDate');
-    const notesInput    = $('#invNotes');
+    const itemRows      = $('#itemRows');
+    const rowTemplate   = $('#itemRowTemplate');
+    const addItemBtn    = $('#addItemBtn');
     const submitText    = $('#invSubmitText');
     const cancelEditBtn = $('#invCancelEdit');
-    const lastPriceHint = $('#lastPriceHint');
     const totalPreview  = $('#invTotalPreview');
     const productList   = $('#productList');
+    const categoryList  = $('#categoryList');
+    const unitList      = $('#unitList');
+    const storeList     = $('#storeList');
     const logList       = $('#logList');
     const logEmpty      = $('#logEmpty');
     const priceList     = $('#priceList');
     const priceEmpty    = $('#priceEmpty');
     const searchInput   = $('#invSearch');
     const filterBar     = $('#invFilters');
-    const dateRow       = $('#dateRow');
     const statProducts  = $('#stat-products');
     const statEntries   = $('#stat-entries');
     const statMonth     = $('#stat-month');
@@ -80,11 +82,22 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     //  PURE LOGIC
     // ═══════════════════════════════════════════════════════
 
-    /** Normalise a typed product name so spelling/case variants group together. */
+    /** Normalise a typed name so spelling/case variants group together. */
     function slug(name) {
         return String(name).toLowerCase().trim()
             .replace(/[^a-z0-9\s]/g, '')
             .replace(/\s+/g, '-');
+    }
+
+    /** Title-case a typed category so "dairy" and "Dairy" stay one bucket. */
+    function normaliseLabel(value) {
+        return String(value).trim().replace(/\s+/g, ' ')
+            .replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+
+    /** ISO date strings sort lexicographically — newest first. */
+    function compareDesc(a, b) {
+        return a < b ? 1 : a > b ? -1 : 0;
     }
 
     /** Group purchases by productKey and derive price-comparison stats. */
@@ -129,11 +142,6 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         }).sort((a, b) => compareDesc(a.latestDate, b.latestDate));
     }
 
-    /** ISO date strings sort lexicographically — newest first. */
-    function compareDesc(a, b) {
-        return a < b ? 1 : a > b ? -1 : 0;
-    }
-
     /** Price stats for one product, or null when never bought. */
     function lastEntryFor(productKey) {
         if (!productKey) return null;
@@ -141,13 +149,18 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         return rows.length ? priceHistory(rows)[0] : null;
     }
 
+    /** Seed values plus everything already used, deduped and sorted. */
+    function suggestionsFor(field, seeds = []) {
+        const used = purchases.map(p => p[field]).filter(Boolean);
+        return [...new Set([...seeds, ...used])].sort((a, b) => a.localeCompare(b));
+    }
+
     // ═══════════════════════════════════════════════════════
     //  INIT
     // ═══════════════════════════════════════════════════════
     function init() {
-        buildSelects();
-        buildFilters();
         dateInput.value = todayStr();
+        addItemRow();
         bindEvents();
         initNavigation();
         registerServiceWorker();
@@ -155,15 +168,97 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         if (new URLSearchParams(location.search).has('selfcheck')) selfCheck();
     }
 
-    function buildSelects() {
-        categorySel.innerHTML = CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
-        unitSel.innerHTML = UNITS.map(u => `<option value="${u}">${u}</option>`).join('');
+    // ═══════════════════════════════════════════════════════
+    //  ITEM ROWS
+    // ═══════════════════════════════════════════════════════
+    function addItemRow(values = null) {
+        const row = rowTemplate.content.firstElementChild.cloneNode(true);
+
+        if (values) {
+            row.querySelector('.row-product').value = values.productName || '';
+            row.querySelector('.row-category').value = values.category || '';
+            row.querySelector('.row-unit').value = values.unit || '';
+            row.querySelector('.row-price').value = values.unitPrice ?? '';
+        }
+
+        row.querySelector('.row-product').addEventListener('input', () => onProductChange(row));
+        row.querySelector('.row-product').addEventListener('change', () => onProductChange(row));
+        row.querySelector('.row-price').addEventListener('input', updateTotalPreview);
+        row.querySelector('.row-remove').addEventListener('click', () => removeItemRow(row));
+
+        itemRows.appendChild(row);
+        refreshRowChrome();
+        return row;
     }
 
-    function buildFilters() {
-        filterBar.innerHTML = ['All', ...CATEGORIES].map(c =>
-            `<button type="button" data-cat="${c}" class="filter-pill ${c === 'All' ? 'active' : ''} px-md py-xs rounded-full text-[11px] font-bold uppercase tracking-wider whitespace-nowrap">${c}</button>`
-        ).join('');
+    function removeItemRow(row) {
+        // Never leave the form with nothing to fill in.
+        if (itemRows.children.length === 1) {
+            clearRow(row);
+        } else {
+            row.remove();
+        }
+        refreshRowChrome();
+        updateTotalPreview();
+    }
+
+    function clearRow(row) {
+        row.querySelectorAll('input').forEach(i => { i.value = ''; });
+        row.querySelector('.row-hint').classList.add('hidden');
+    }
+
+    /** Renumber rows, hide the remove button when only one row is left. */
+    function refreshRowChrome() {
+        const rows = [...itemRows.children];
+        rows.forEach((row, i) => {
+            row.querySelector('.row-label').textContent = `Item ${i + 1}`;
+            row.querySelector('.row-remove').classList.toggle('invisible', rows.length === 1);
+        });
+        submitText.textContent = editingId ? 'Update'
+            : rows.length > 1 ? `Save all (${rows.length})`
+            : 'Save';
+    }
+
+    function readRow(row) {
+        return {
+            productName: row.querySelector('.row-product').value.trim(),
+            category: row.querySelector('.row-category').value.trim(),
+            unit: row.querySelector('.row-unit').value.trim(),
+            price: row.querySelector('.row-price').value.trim(),
+            el: row,
+        };
+    }
+
+    function onProductChange(row) {
+        const hint = row.querySelector('.row-hint');
+        const last = lastEntryFor(slug(row.querySelector('.row-product').value));
+
+        if (!last) {
+            hint.classList.add('hidden');
+            return;
+        }
+
+        // Only prefill blanks — never clobber something already typed.
+        const categoryEl = row.querySelector('.row-category');
+        const unitEl = row.querySelector('.row-unit');
+        if (!categoryEl.value) categoryEl.value = last.category;
+        if (!unitEl.value) unitEl.value = last.unit;
+
+        hint.innerHTML = `Last <strong>₹${fmt(last.latest)}</strong>`
+            + (last.unit ? ` / ${escapeHtml(last.unit)}` : '')
+            + ` · ${formatDatePretty(last.latestDate)}`
+            + (last.latestStore ? ` · ${escapeHtml(last.latestStore)}` : '')
+            + ` · best ₹${fmt(last.min)} · avg3 ₹${fmt(last.avg3)}`;
+        hint.classList.remove('hidden');
+    }
+
+    function updateTotalPreview() {
+        const rows = [...itemRows.children].map(readRow);
+        const filled = rows.filter(r => parseFloat(r.price) > 0);
+        const total = filled.reduce((sum, r) => sum + parseFloat(r.price), 0);
+        totalPreview.textContent = filled.length
+            ? `${filled.length} item${filled.length > 1 ? 's' : ''} · ₹${fmt(total)}`
+            : '';
     }
 
     // ═══════════════════════════════════════════════════════
@@ -220,7 +315,9 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             render();
         }, (err) => {
             console.error('Firestore listen failed:', err);
-            showToast('Sync error — showing local data');
+            showToast(err.code === 'permission-denied'
+                ? 'No access to your purchases — check Firestore rules'
+                : 'Sync error — showing local data');
             purchases = loadFromLocalStorage();
             render();
         });
@@ -245,12 +342,16 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         }
     }
 
-    async function persist(entry) {
+    /** Write a batch of entries in one shot. */
+    async function persistAll(entries) {
         if (currentUser) {
-            await setDoc(doc(purchasesRef(), entry.id), entry);
+            const batch = writeBatch(dbFirestore);
+            for (const entry of entries) batch.set(doc(purchasesRef(), entry.id), entry);
+            await batch.commit();
             return;
         }
-        purchases = [...purchases.filter(p => p.id !== entry.id), entry];
+        const ids = new Set(entries.map(e => e.id));
+        purchases = [...purchases.filter(p => !ids.has(p.id)), ...entries];
         saveToLocalStorage();
         render();
     }
@@ -302,13 +403,11 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     function bindEvents() {
         form.addEventListener('submit', handleSubmit);
         cancelEditBtn.addEventListener('click', resetForm);
-
-        // Autocomplete recall: prefill category/unit from the last buy of this product.
-        productInput.addEventListener('input', onProductChange);
-        productInput.addEventListener('change', onProductChange);
-
-        qtyInput.addEventListener('input', updateTotalPreview);
-        priceInput.addEventListener('input', updateTotalPreview);
+        addItemBtn.addEventListener('click', () => {
+            const row = addItemRow();
+            row.querySelector('.row-product').focus();
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
 
         searchInput.addEventListener('input', (e) => {
             searchTerm = e.target.value.toLowerCase().trim();
@@ -324,105 +423,113 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             renderPrices();
         });
 
-        $('#toggleDate').addEventListener('click', () => dateRow.classList.toggle('hidden'));
-
         if (sidebarLoginBtn) sidebarLoginBtn.addEventListener('click', handleLoginClick);
         if (mobileLoginBtn) mobileLoginBtn.addEventListener('click', handleLoginClick);
     }
 
-    function onProductChange() {
-        const last = lastEntryFor(slug(productInput.value));
-        if (!last) {
-            lastPriceHint.classList.add('hidden');
-            return;
-        }
-        // Only prefill while adding — never overwrite fields mid-edit.
-        if (!editingId) {
-            categorySel.value = last.category;
-            unitSel.value = last.unit;
-        }
-        lastPriceHint.innerHTML = `Last <strong>₹${fmt(last.latest)}/${escapeHtml(last.unit)}</strong>`
-            + ` · ${formatDatePretty(last.latestDate)}`
-            + (last.latestStore ? ` · ${escapeHtml(last.latestStore)}` : '')
-            + ` · best ₹${fmt(last.min)} · avg3 ₹${fmt(last.avg3)}`;
-        lastPriceHint.classList.remove('hidden');
-        updateTotalPreview();
-    }
-
-    function updateTotalPreview() {
-        const qty = parseFloat(qtyInput.value);
-        const price = parseFloat(priceInput.value);
-        totalPreview.textContent = (qty > 0 && price > 0) ? `Total ₹${fmt(qty * price)}` : '';
-    }
-
+    // ═══════════════════════════════════════════════════════
+    //  SAVE
+    // ═══════════════════════════════════════════════════════
     function handleSubmit(e) {
         e.preventDefault();
 
-        const productName = productInput.value.trim();
-        const quantity = parseFloat(qtyInput.value);
-        const unitPrice = parseFloat(priceInput.value);
-
-        // Validate at the boundary: a zero here poisons every average downstream.
-        if (!productName) return showToast('Product name required');
-        if (!(quantity > 0)) return showToast('Quantity must be greater than 0');
-        if (!(unitPrice > 0)) return showToast('Price must be greater than 0');
         if (!dateInput.value) return showToast('Purchase date required');
 
-        const productKey = slug(productName);
-        const last = editingId ? null : lastEntryFor(productKey);
-        const wayOff = last && (unitPrice > last.latest * PRICE_SANITY_FACTOR
-                             || unitPrice < last.latest / PRICE_SANITY_FACTOR);
+        const rows = [...itemRows.children].map(readRow);
+        // A row with nothing in it is not an error — it is just an unused slot.
+        const touched = rows.filter(r => r.productName || r.category || r.unit || r.price);
 
-        if (wayOff) {
-            showConfirm(
-                `₹${fmt(unitPrice)}/${unitSel.value} is far off the last ₹${fmt(last.latest)}/${last.unit}. Wrong unit? Save anyway?`,
-                () => saveEntry(productName, productKey, quantity, unitPrice, last)
-            );
+        if (!touched.length) return showToast('Add at least one item');
+
+        // Validate at the boundary: a zero price poisons every average downstream.
+        for (const [i, row] of touched.entries()) {
+            const label = touched.length > 1 ? `Item ${i + 1}: ` : '';
+            if (!row.productName) return failRow(row, `${label}product name required`);
+            if (!row.category) return failRow(row, `${label}category required`);
+            if (!row.unit) return failRow(row, `${label}unit required`);
+            if (!(parseFloat(row.price) > 0)) return failRow(row, `${label}price must be greater than 0`);
+        }
+
+        const entries = touched.map(buildEntry);
+        const odd = editingId ? [] : entries.map(oddPrice).filter(Boolean);
+
+        if (odd.length) {
+            showConfirm(`${odd.join('; ')}. Wrong unit? Save anyway?`, () => commit(entries));
             return;
         }
 
-        saveEntry(productName, productKey, quantity, unitPrice, last);
+        commit(entries);
     }
 
-    async function saveEntry(productName, productKey, quantity, unitPrice, last) {
-        const existing = editingId ? purchases.find(p => p.id === editingId) : null;
-        const wasEditing = Boolean(editingId);
+    function failRow(row, message) {
+        row.el.querySelector('.row-product').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        showToast(message);
+    }
 
-        const entry = {
+    function buildEntry(row) {
+        const existing = editingId ? purchases.find(p => p.id === editingId) : null;
+        const unitPrice = parseFloat(row.price);
+
+        return {
             id: editingId || generateId(),
             purchaseDate: dateInput.value,
-            productKey,
-            productName,
-            category: categorySel.value,
-            unit: unitSel.value,
-            quantity,
+            productKey: slug(row.productName),
+            productName: row.productName,
+            category: normaliseLabel(row.category),
+            unit: row.unit,
+            quantity: FIXED_QUANTITY,
             unitPrice,
-            totalPrice: +(quantity * unitPrice).toFixed(2),
+            totalPrice: unitPrice * FIXED_QUANTITY,
             store: storeInput.value.trim(),
-            notes: notesInput.value.trim(),
+            notes: '',
             createdAt: existing?.createdAt ?? Date.now(),
         };
+    }
+
+    /** Message describing a suspicious price, or null when it looks normal. */
+    function oddPrice(entry) {
+        const last = lastEntryFor(entry.productKey);
+        if (!last) return null;
+        const tooHigh = entry.unitPrice > last.latest * PRICE_SANITY_FACTOR;
+        const tooLow = entry.unitPrice < last.latest / PRICE_SANITY_FACTOR;
+        if (!tooHigh && !tooLow) return null;
+        return `${entry.productName} ₹${fmt(entry.unitPrice)} vs last ₹${fmt(last.latest)}`;
+    }
+
+    async function commit(entries) {
+        // Capture the comparison before the new rows land in `purchases`.
+        const previous = entries.map(e => lastEntryFor(e.productKey));
+        const wasEditing = Boolean(editingId);
 
         try {
-            await persist(entry);
+            await persistAll(entries);
         } catch (err) {
             console.error('Save failed:', err);
-            showToast('Save failed: ' + err.message);
+            showToast(err.code === 'permission-denied'
+                ? 'Save blocked by Firestore rules — allow users/{uid}/purchases'
+                : 'Save failed: ' + err.message);
             return;
         }
 
-        if (wasEditing) {
-            showToast('Entry updated');
-        } else if (last) {
-            const delta = ((unitPrice - last.latest) / last.latest) * 100;
+        showToast(saveMessage(entries, previous, wasEditing));
+        resetForm();
+        itemRows.querySelector('.row-product').focus();
+    }
+
+    function saveMessage(entries, previous, wasEditing) {
+        if (wasEditing) return 'Entry updated';
+
+        if (entries.length === 1) {
+            const [entry] = entries;
+            const [last] = previous;
+            if (!last) return `${entry.productName} logged — first entry`;
+            const delta = ((entry.unitPrice - last.latest) / last.latest) * 100;
             const dir = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat vs';
-            showToast(`${productName} ₹${fmt(unitPrice)}/${entry.unit} — ${dir} ${Math.abs(delta).toFixed(1)}% from ₹${fmt(last.latest)}`);
-        } else {
-            showToast(`${productName} logged — first entry`);
+            return `${entry.productName} ₹${fmt(entry.unitPrice)} — ${dir} ${Math.abs(delta).toFixed(1)}% from ₹${fmt(last.latest)}`;
         }
 
-        resetForm();
-        productInput.focus(); // Sheet stays open: one trip is many items.
+        const total = entries.reduce((sum, e) => sum + e.totalPrice, 0);
+        return `${entries.length} items saved · ₹${fmt(total)}`;
     }
 
     function startEdit(id) {
@@ -431,52 +538,67 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
         editingId = id;
         editIdInput.value = id;
-        productInput.value = entry.productName;
-        categorySel.value = entry.category;
-        qtyInput.value = entry.quantity;
-        unitSel.value = entry.unit;
-        priceInput.value = entry.unitPrice;
         storeInput.value = entry.store || '';
-        notesInput.value = entry.notes || '';
         dateInput.value = entry.purchaseDate;
 
-        dateRow.classList.remove('hidden');
-        submitText.textContent = 'Update';
+        // Editing touches exactly one entry, so collapse to a single row.
+        itemRows.innerHTML = '';
+        addItemRow(entry);
+        addItemBtn.classList.add('hidden');
         cancelEditBtn.classList.remove('hidden');
-        lastPriceHint.classList.add('hidden');
+        refreshRowChrome();
         updateTotalPreview();
+
         navigate('log');
         form.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     function resetForm() {
         editingId = null;
-        form.reset();
         editIdInput.value = '';
+        storeInput.value = '';
         dateInput.value = todayStr();
-        dateRow.classList.add('hidden');
-        submitText.textContent = 'Save';
+        itemRows.innerHTML = '';
+        addItemRow();
+        addItemBtn.classList.remove('hidden');
         cancelEditBtn.classList.add('hidden');
-        lastPriceHint.classList.add('hidden');
-        totalPreview.textContent = '';
+        refreshRowChrome();
+        updateTotalPreview();
     }
 
     // ═══════════════════════════════════════════════════════
     //  RENDER
     // ═══════════════════════════════════════════════════════
     function render() {
-        renderDatalist();
+        renderDatalists();
+        renderFilters();
         renderStats();
         renderLog();
         renderPrices();
     }
 
-    function renderDatalist() {
-        const seen = new Map();
-        for (const p of purchases) seen.set(p.productKey, p.productName);
-        productList.innerHTML = [...seen.values()]
-            .sort((a, b) => a.localeCompare(b))
-            .map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+    function renderDatalists() {
+        const products = new Map();
+        for (const p of purchases) products.set(p.productKey, p.productName);
+
+        fillDatalist(productList, [...products.values()].sort((a, b) => a.localeCompare(b)));
+        fillDatalist(categoryList, suggestionsFor('category', SEED_CATEGORIES));
+        fillDatalist(unitList, suggestionsFor('unit', SEED_UNITS));
+        fillDatalist(storeList, suggestionsFor('store'));
+    }
+
+    function fillDatalist(el, values) {
+        el.innerHTML = values.map(v => `<option value="${escapeHtml(v)}"></option>`).join('');
+    }
+
+    function renderFilters() {
+        const categories = ['All', ...suggestionsFor('category', SEED_CATEGORIES)];
+        // Rebuilding drops the active pill when its category disappears.
+        if (!categories.includes(activeCategory)) activeCategory = 'All';
+
+        filterBar.innerHTML = categories.map(c =>
+            `<button type="button" data-cat="${escapeHtml(c)}" class="filter-pill ${c === activeCategory ? 'active' : ''} px-md py-xs rounded-full text-[11px] font-bold uppercase tracking-wider whitespace-nowrap">${escapeHtml(c)}</button>`
+        ).join('');
     }
 
     function renderStats() {
@@ -506,8 +628,8 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                 </div>
                 <div class="flex items-center gap-md shrink-0">
                     <div class="flex flex-col items-end gap-1">
-                        <span class="text-base font-bold text-on-surface">₹${fmt(p.unitPrice)}<span class="text-[10px] text-on-surface-variant">/${escapeHtml(p.unit)}</span></span>
-                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">${fmt(p.quantity)} ${escapeHtml(p.unit)} · ₹${fmt(p.totalPrice)}</span>
+                        <span class="text-base font-bold text-on-surface">₹${fmt(p.unitPrice)}</span>
+                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">${escapeHtml(p.unit)}</span>
                     </div>
                     <div class="flex gap-xs">
                         <button data-edit="${p.id}" class="p-xs text-on-surface-variant hover:text-primary transition-colors" aria-label="Edit ${escapeHtml(p.productName)}">
@@ -550,12 +672,12 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                 <div class="flex items-start justify-between gap-md">
                     <div class="flex flex-col gap-1 min-w-0">
                         <span class="text-sm font-bold text-on-surface truncate">${escapeHtml(r.productName)}</span>
-                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">${escapeHtml(r.category)} · ${r.count} ${r.count === 1 ? 'entry' : 'entries'}</span>
+                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">${escapeHtml(r.category)} · ${escapeHtml(r.unit)} · ${r.count} ${r.count === 1 ? 'entry' : 'entries'}</span>
                     </div>
                     <div class="flex items-center gap-sm shrink-0">
                         <span class="text-on-surface-variant">${sparkline(r.sparkline)}</span>
                         <div class="flex flex-col items-end gap-1">
-                            <span class="text-base font-bold text-on-surface">₹${fmt(r.latest)}<span class="text-[10px] text-on-surface-variant">/${escapeHtml(r.unit)}</span></span>
+                            <span class="text-base font-bold text-on-surface">₹${fmt(r.latest)}</span>
                             ${delta}
                         </div>
                     </div>
@@ -565,7 +687,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                     <span>Range ₹${fmt(r.min)}–₹${fmt(r.max)}</span>
                     <span>Avg3 ₹${fmt(r.avg3)}</span>
                     ${r.cheapestStore ? `<span>Best ${escapeHtml(r.cheapestStore)}</span>` : ''}
-                    <span class="ml-auto normal-case tracking-normal">Last bought ${formatDatePretty(r.latestDate)} at ₹${fmt(r.latest)}/${escapeHtml(r.unit)}</span>
+                    <span class="ml-auto normal-case tracking-normal">Last bought ${formatDatePretty(r.latestDate)} at ₹${fmt(r.latest)}</span>
                 </div>
             </div>`;
         }).join('');
@@ -619,7 +741,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         toast.textContent = msg;
         toast.classList.add('toast-show');
         clearTimeout(toast._timer);
-        toast._timer = setTimeout(() => toast.classList.remove('toast-show'), 2600);
+        toast._timer = setTimeout(() => toast.classList.remove('toast-show'), 3200);
     }
 
     function showConfirm(message, onConfirm) {
@@ -646,15 +768,15 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         }
     }
 
-    // ponytail: one self-check, covers the ways priceHistory actually breaks.
+    // ponytail: one self-check, covers the ways the pure logic actually breaks.
     // Run inventory.html?selfcheck=1 and watch the console.
     function selfCheck() {
         const rows = [
-            { productKey: 'milk', productName: 'Milk', category: 'Dairy', unit: 'L',
+            { productKey: 'milk', productName: 'Milk', category: 'Dairy', unit: '1L',
               unitPrice: 30, purchaseDate: '2026-08-12', createdAt: 1, store: 'DMart' },
-            { productKey: 'milk', productName: 'Milk', category: 'Dairy', unit: 'L',
+            { productKey: 'milk', productName: 'Milk', category: 'Dairy', unit: '1L',
               unitPrice: 32, purchaseDate: '2026-08-28', createdAt: 2, store: 'Local' },
-            { productKey: 'rice', productName: 'Rice', category: 'Grains', unit: 'kg',
+            { productKey: 'rice', productName: 'Rice', category: 'Grains', unit: '5kg',
               unitPrice: 60, purchaseDate: '2026-08-05', createdAt: 3, store: 'DMart' },
         ];
         const out = priceHistory(rows);
@@ -667,6 +789,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         console.assert(milk.min === 30 && milk.max === 32, 'range wrong');
         console.assert(rice.deltaPct === null, 'single entry must not divide by zero');
         console.assert(slug('  Amul  Milk!! ') === 'amul-milk', 'slug normalisation wrong');
+        console.assert(normaliseLabel('  dry   fruits ') === 'Dry Fruits', 'label normalisation wrong');
         console.log('inventory self-check done');
     }
 
