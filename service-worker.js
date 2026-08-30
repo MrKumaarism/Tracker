@@ -1,9 +1,22 @@
 /* ═══════════════════════════════════════════════════════
    Fuel Tracker — Service Worker
-   Network-first for pages, stale-while-revalidate for assets
+
+   Network-first for everything, cache purely as an offline fallback.
+
+   The old split (network-first pages, stale-while-revalidate assets) meant a
+   push to GitHub only reached the phone on the *second* open, and any asset
+   whose URL had not changed could stay stale indefinitely — which is why
+   updating meant reinstalling the PWA. Freshness now never depends on a
+   version string being bumped by hand; the cache only answers when the
+   network does not.
    ═══════════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'fuel-tracker-v13';
+const CACHE_NAME = 'fuel-tracker-v14';
+
+// How long to wait for the network before falling back to cache. Without a
+// timeout, "connected to wifi with no internet" hangs the app instead of
+// failing over — the common airport/hotel/lift case on a phone.
+const NETWORK_TIMEOUT_MS = 4000;
 
 const APP_SHELL = [
     './',
@@ -13,6 +26,7 @@ const APP_SHELL = [
     './style.css',
     './app.js',
     './inventory.js',
+    './sw-register.js',
     './manifest.json',
     './icons/favicon.svg',
     './icons/apple-touch-icon-180.png',
@@ -35,7 +49,12 @@ const APP_SHELL = [
 // ─── Install: cache app shell ───
 self.addEventListener('install', (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
+        caches.open(CACHE_NAME).then((cache) =>
+            // cache:'reload' bypasses the browser's HTTP cache, so a fresh
+            // install never seeds itself with the stale copies it was
+            // supposed to replace.
+            cache.addAll(APP_SHELL.map((url) => new Request(url, { cache: 'reload' })))
+        )
     );
     self.skipWaiting();
 });
@@ -51,51 +70,51 @@ self.addEventListener('activate', (event) => {
 });
 
 // ─── Fetch ───
-// Pages: network-first, so an updated app shell shows up on the very next load.
-// Assets: stale-while-revalidate, since they are cheap to serve stale for one load.
 self.addEventListener('fetch', (event) => {
     if (event.request.method !== 'GET') return;
 
-    if (event.request.mode === 'navigate') {
-        event.respondWith(networkFirst(event.request));
-        return;
-    }
+    // Firestore talks over its own transport and does its own offline
+    // queueing. Caching it would serve stale reads and break writes.
+    if (new URL(event.request.url).origin !== self.location.origin) return;
 
-    event.respondWith(staleWhileRevalidate(event.request));
+    event.respondWith(networkFirst(event.request));
 });
 
 async function networkFirst(request) {
     try {
-        const response = await fetch(request);
+        // GitHub Pages serves everything with max-age=600, so a plain fetch()
+        // can be answered from the browser's own HTTP cache and stay up to ten
+        // minutes behind a push. cache:'no-cache' forces a revalidation — the
+        // server answers 304 when nothing changed, so this is nearly free.
+        // A navigation Request cannot carry an init, hence the rebuild by URL.
+        const netRequest = request.mode === 'navigate'
+            ? new Request(request.url, { cache: 'no-cache', credentials: 'same-origin' })
+            : new Request(request, { cache: 'no-cache' });
+
+        const response = await withTimeout(fetch(netRequest), NETWORK_TIMEOUT_MS);
         if (response && response.status === 200) {
             const cache = await caches.open(CACHE_NAME);
             cache.put(request, response.clone());
         }
         return response;
     } catch {
-        // Offline: the requested page, ignoring ?v= style cache-busting
-        // query strings, then index.html as a last resort.
         return (await caches.match(request))
+            // Retry ignoring ?v= style cache-busting query strings.
             || (await caches.match(request, { ignoreSearch: true }))
-            || (await caches.match('./index.html'));
+            // A navigation to anything we have never seen still gets an app.
+            || (request.mode === 'navigate' ? await caches.match('./index.html') : null)
+            || Response.error();
     }
 }
 
-async function staleWhileRevalidate(request) {
-    const cached = await caches.match(request);
-
-    const fetchPromise = fetch(request)
-        .then((response) => {
-            if (response && response.status === 200) {
-                const clone = response.clone();
-                caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-            }
-            return response;
-        })
-        .catch(() => cached);
-
-    return cached
-        || (await fetchPromise)
-        || (await caches.match(request, { ignoreSearch: true }))
-        || Response.error();
+function withTimeout(promise, ms) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+    ]);
 }
+
+// Lets a page ask the worker to activate immediately (used by reset.html).
+self.addEventListener('message', (event) => {
+    if (event.data === 'skipWaiting') self.skipWaiting();
+});

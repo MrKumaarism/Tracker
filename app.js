@@ -111,7 +111,6 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         setDefaultDate();
         bindEvents();
         initNavigation();
-        registerServiceWorker();
 
         // Initialize Firebase Auth which will load data
         initAuth();
@@ -866,15 +865,6 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             resetForm();
             showToast('🗑️ All data cleared');
         });
-    }
-
-    // ═══════════════════════════════════════════════════════
-    //  SERVICE WORKER
-    // ═══════════════════════════════════════════════════════
-    function registerServiceWorker() {
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('service-worker.js').catch(() => {});
-        }
     }
 
     // ═══════════════════════════════════════════════════════

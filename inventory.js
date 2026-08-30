@@ -216,7 +216,6 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         addItemRow();
         bindEvents();
         initNavigation();
-        registerServiceWorker();
         initAuth();
         if (new URLSearchParams(location.search).has('selfcheck')) selfCheck();
     }
@@ -971,13 +970,6 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         };
         yes.addEventListener('click', () => { close(); onConfirm(); });
         no.addEventListener('click', close);
-    }
-
-    function registerServiceWorker() {
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('service-worker.js')
-                .catch(err => console.warn('SW registration failed:', err));
-        }
     }
 
     // ponytail: one self-check, covers the ways the pure logic actually breaks.
