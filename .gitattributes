@@ -1,0 +1,6 @@
+# Vendored third-party assets are byte-exact copies. Git's eol normalisation
+# rewrote CRLF inside the minified firebase bundle on commit, so what GitHub
+# Pages served no longer matched what was downloaded.
+vendor/** -text
+*.woff2 binary
+*.png binary
