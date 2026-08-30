@@ -486,8 +486,14 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     // ═══════════════════════════════════════════════════════
     //  FORM SUBMIT (Add / Edit)
     // ═══════════════════════════════════════════════════════
+    // True from the moment a save starts until the button returns to normal.
+    // pointer-events-none alone did not cover Enter in a text field, and the
+    // entry was pushed into `entries` before the button was ever disabled.
+    let saving = false;
+
     async function handleSubmit(e) {
         e.preventDefault();
+        if (saving) return;
 
         const fuelType    = $('input[name="fuelType"]:checked').value;
         const vehicleType = $('input[name="vehicleType"]:checked').value;
@@ -529,12 +535,27 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         }
 
         // Button animation
+        saving = true;
+        submitBtn.disabled = true;
+        submitBtn.setAttribute('aria-busy', 'true');
         const origHtml = submitBtn.innerHTML;
         submitBtn.innerHTML = `<span class="material-symbols-outlined text-[18px] animate-spin">sync</span><span>Saving...</span>`;
         submitBtn.classList.add('opacity-80', 'pointer-events-none');
 
-        // recalculate and sync
-        await recalculateAndSyncChains();
+        // recalculate and sync. A throw here must still release the button,
+        // otherwise one failed sync locks the form for the rest of the session.
+        try {
+            await recalculateAndSyncChains();
+        } catch (err) {
+            console.error('Save failed:', err);
+            submitBtn.innerHTML = origHtml;
+            submitBtn.classList.remove('opacity-80', 'pointer-events-none');
+            submitBtn.disabled = false;
+            submitBtn.setAttribute('aria-busy', 'false');
+            saving = false;
+            showToast('Save failed: ' + (err.message || 'unknown error'));
+            return;
+        }
 
         setTimeout(() => {
             submitBtn.innerHTML = `<span class="material-symbols-outlined text-[18px]">check</span><span>Saved!</span>`;
@@ -546,6 +567,9 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                 submitBtn.innerHTML = origHtml;
                 submitBtn.classList.replace('bg-secondary', 'bg-primary');
                 submitBtn.classList.remove('opacity-80', 'pointer-events-none');
+                submitBtn.disabled = false;
+                submitBtn.setAttribute('aria-busy', 'false');
+                saving = false;
                 render();
             }, 1500);
         }, 600);

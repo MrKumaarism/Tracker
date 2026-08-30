@@ -35,6 +35,8 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     const SEED_UNITS = ['piece', 'pack', '100g', '250g', '500g', 'kg', '250ml', '500ml', 'L', 'dozen'];
     // Warn (never block) when a price is wildly off the last one — usually a wrong unit.
     const PRICE_SANITY_FACTOR = 2;
+    // How long the button holds its ✓ Saved state before going back to Save.
+    const SAVED_MS = 1400;
     const LOOKUP_ROWS = 3;
     const SEARCH_DEBOUNCE_MS = 150;
 
@@ -65,6 +67,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     const rowTemplate   = $('#itemRowTemplate');
     const addItemBtn    = $('#addItemBtn');
     const submitText    = $('#invSubmitText');
+    const submitBtn     = $('#invSubmitBtn');
     const cancelEditBtn = $('#invCancelEdit');
     const itemCount     = $('#invItemCount');
     const productList   = $('#productList');
@@ -623,8 +626,15 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     // ═══════════════════════════════════════════════════════
     //  SAVE
     // ═══════════════════════════════════════════════════════
+    // True while a save is in flight. Without it, tapping Save three times
+    // before Firestore answers wrote three separate rows for one product —
+    // buildEntry() mints a fresh id per call, so nothing downstream could
+    // recognise them as the same purchase.
+    let saving = false;
+
     function handleSubmit(e) {
         e.preventDefault();
+        if (saving) return;
 
         const rows = [...itemRows.children].map(readRow);
         // A row with nothing in it is not an error — it is just an unused slot.
@@ -687,14 +697,21 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     }
 
     async function commit(entries) {
+        if (saving) return;
+
         // Capture the comparison before the new rows land in `purchases`.
         const previous = entries.map(e => historyFor(e.productKey));
         const wasEditing = Boolean(editingId);
+
+        saving = true;
+        setSaveState('saving');
 
         try {
             await persistAll(entries);
         } catch (err) {
             console.error('Save failed:', err);
+            setSaveState('idle');
+            saving = false;
             showToast(err.code === 'permission-denied'
                 ? 'Save blocked by Firestore rules — allow users/{uid}/purchases'
                 : 'Save failed: ' + err.message);
@@ -703,7 +720,32 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
         showToast(saveMessage(entries, previous, wasEditing));
         resetForm();
-        itemRows.querySelector('.row-product').focus();
+
+        // Hold the confirmation on the button itself for a moment. The toast
+        // alone was too easy to miss on a phone, which is what led to the
+        // repeat taps in the first place.
+        setSaveState('saved');
+        setTimeout(() => {
+            setSaveState('idle');
+            saving = false;
+            itemRows.querySelector('.row-product').focus();
+        }, SAVED_MS);
+    }
+
+    /** Drives the submit button through idle → saving → saved. */
+    function setSaveState(state) {
+        submitBtn.disabled = state !== 'idle';
+        submitBtn.setAttribute('aria-busy', String(state === 'saving'));
+        submitBtn.classList.toggle('opacity-70', state === 'saving');
+        submitBtn.classList.toggle('bg-primary', state !== 'saved');
+        submitBtn.classList.toggle('bg-secondary', state === 'saved');
+        submitBtn.classList.toggle('text-on-primary', state !== 'saved');
+        submitBtn.classList.toggle('text-on-secondary', state === 'saved');
+
+        if (state === 'saving') submitText.textContent = 'Saving...';
+        else if (state === 'saved') submitText.textContent = '✓ Saved';
+        // refreshRowChrome owns the idle label — it knows about "Save all (n)".
+        else refreshRowChrome();
     }
 
     function saveMessage(entries, previous, wasEditing) {
