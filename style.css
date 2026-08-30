@@ -1,3 +1,36 @@
+/* Material Symbols, vendored. Every icon in the UI is a ligature in this
+   font, so a network fetch here means the offline app renders the word
+   "delete" where the bin icon should be. */
+@font-face {
+    font-family: 'Material Symbols Outlined';
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url('vendor/material-symbols.woff2') format('woff2');
+}
+
+.material-symbols-outlined {
+    font-family: 'Material Symbols Outlined';
+    font-weight: normal;
+    font-style: normal;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    -webkit-font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Google's stylesheet forced 24px here. :where() keeps that default but at
+   zero specificity, so the text-[18px] utilities in the markup still win —
+   they only did before because the CDN sheet was ordered after this one. */
+:where(.material-symbols-outlined) {
+    font-size: 24px;
+}
+
 /* ═══════════════════════════════════════════════════════
    Fuel Tracker — "Notebook Tabs" design system
    Dark outer shell, cream paper page, binder holes on the

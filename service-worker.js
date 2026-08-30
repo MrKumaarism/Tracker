@@ -3,7 +3,7 @@
    Network-first for pages, stale-while-revalidate for assets
    ═══════════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'fuel-tracker-v12';
+const CACHE_NAME = 'fuel-tracker-v13';
 
 const APP_SHELL = [
     './',
@@ -18,6 +18,18 @@ const APP_SHELL = [
     './icons/apple-touch-icon-180.png',
     './icons/icon-192.png',
     './icons/icon-512.png',
+
+    // Vendored third-party. These used to load from cdn.tailwindcss.com and
+    // gstatic, which meant a cold offline start had no layout and no Firebase
+    // at all — the ESM import threw before a single line of app.js ran.
+    './vendor/tailwind.js',
+    './vendor/firebase-app.js',
+    './vendor/firebase-auth.js',
+    './vendor/firebase-firestore.js',
+    './vendor/material-symbols.woff2',
+    './vendor/fonts.css',
+    './vendor/bodoni-moda.woff2',
+    './vendor/dm-sans.woff2',
 ];
 
 // ─── Install: cache app shell ───
@@ -61,8 +73,10 @@ async function networkFirst(request) {
         }
         return response;
     } catch {
-        // Offline: the requested page, then index.html as last resort.
+        // Offline: the requested page, ignoring ?v= style cache-busting
+        // query strings, then index.html as a last resort.
         return (await caches.match(request))
+            || (await caches.match(request, { ignoreSearch: true }))
             || (await caches.match('./index.html'));
     }
 }
@@ -80,5 +94,8 @@ async function staleWhileRevalidate(request) {
         })
         .catch(() => cached);
 
-    return cached || fetchPromise;
+    return cached
+        || (await fetchPromise)
+        || (await caches.match(request, { ignoreSearch: true }))
+        || Response.error();
 }
