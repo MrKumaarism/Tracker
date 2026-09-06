@@ -8,8 +8,13 @@ const src = fs.readFileSync(require('path').join(__dirname, 'app.js'), 'utf8');
 const start = src.indexOf('    function buildMonthlySummary(list) {');
 const end = src.indexOf('    function monthLabel(key) {');
 assert.ok(start !== -1 && end > start, 'buildMonthlySummary not found in app.js');
+// isSupportFuel lives at module scope and decides which fills are cost-only
+const supStart = src.indexOf('function isSupportFuel(vehicleType, fuelType) {');
+const supEnd = src.indexOf('}', src.indexOf('return vehicleType', supStart)) + 1;
+assert.ok(supStart !== -1 && supEnd > supStart, 'isSupportFuel not found in app.js');
+
 const buildMonthlySummary = new Function(
-    src.slice(start, end) + '\nreturn buildMonthlySummary;'
+    src.slice(supStart, supEnd) + src.slice(start, end) + '\nreturn buildMonthlySummary;'
 )();
 
 const entries = [
@@ -59,5 +64,19 @@ assert.strictEqual(scooty.spentPending, 519);
 assert.strictEqual(scooty.qtyPending, 5.088);
 assert.strictEqual(carCng.spentPending, 0);
 assert.strictEqual(months[0].spentPending, 500);
+
+// Car petrol is backup/startup fuel: it counts as spend but never as a cycle,
+// so it cannot drag the month's mileage or cost-per-km around
+const withPetrol = buildMonthlySummary(entries.concat([
+    { date: '2026-09-11', vehicleType: 'Car', fuelType: 'Petrol', spent: 300, qty: 2.94, status: 'support' },
+]));
+const sepP = withPetrol.find(m => m.key === '2026-09');
+assert.strictEqual(sepP.spentSupport, 300);
+assert.strictEqual(sepP.spent, 2019);            // 1719 + 300
+assert.strictEqual(sepP.spentCompleted, 1200);   // unchanged
+assert.strictEqual(sepP.km, 300);                // unchanged
+assert.strictEqual(sepP.pending, 1);             // petrol is not a pending cycle
+assert.strictEqual(sepP.groups.get('Car|Petrol').support, true);
+assert.strictEqual(sepP.groups.get('Car|CNG').support, false);
 
 console.log('monthly summary: all assertions passed');

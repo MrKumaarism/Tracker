@@ -20,6 +20,15 @@ const dbFirestore = getFirestore(app);
 // than this list, e.g. rows imported from a CSV with a type no longer offered.
 const VEHICLE_EMOJI = { Car: '🚗', Bike: '🏍️', Scooty: '🛵' };
 
+// The car runs on CNG and keeps petrol only to start the engine and as a
+// backup when the cylinder runs dry — it never covers meaningful distance, so
+// a km/L figure for it would be fiction. Car petrol is therefore tracked as
+// cost only: no trip distance, no chain, no mileage. Bike and Scooty run on
+// petrol for real and keep full tracking.
+function isSupportFuel(vehicleType, fuelType) {
+    return vehicleType === 'Car' && fuelType === 'Petrol';
+}
+
 enableIndexedDbPersistence(dbFirestore).catch((err) => {
     console.warn("Firestore offline persistence error:", err);
 });
@@ -282,6 +291,16 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                 const entry = group[i];
                 entry.qty = +(entry.spent / entry.price).toFixed(3);
                 
+                if (isSupportFuel(entry.vehicleType, entry.fuelType)) {
+                    entry.tripEntered = 0;
+                    entry.distanceDriven = null;
+                    entry.mileage = null;
+                    entry.costPerKm = null;
+                    entry.status = 'support';
+                    updatedEntries.push(entry);
+                    continue;
+                }
+
                 if (i + 1 < group.length) {
                     const nextEntry = group[i + 1];
                     entry.distanceDriven = nextEntry.tripEntered || 0;
@@ -439,15 +458,22 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     // first fill of a vehicle+fuel combo there is no previous tank, so the field
     // has nothing to measure — lock it at 0 rather than ask for a number the
     // chain calculation ignores anyway.
-    function setTripLocked(locked) {
+    function setTripLocked(locked, reason) {
         kmInput.disabled = locked;
         kmInput.required = !locked;
         kmInput.classList.toggle('opacity-50', locked);
         if (locked) kmInput.value = '0';
-        if (kmHint) kmHint.classList.toggle('hidden', !locked);
-        if (kmLabel) kmLabel.textContent = locked
-            ? 'Trip Distance (first fill — none yet)'
-            : 'Trip Distance (since last fuel)';
+        if (kmHint) {
+            kmHint.classList.toggle('hidden', !locked);
+            kmHint.textContent = reason === 'support'
+                ? 'Petrol in the car only starts the engine and covers you if the CNG runs out, so there is no distance to attribute to it. The amount still counts towards your monthly spend.'
+                : 'First fill for this vehicle & fuel — there is no previous tank to measure, so leave this at 0. Your next fill records the distance.';
+        }
+        if (kmLabel) kmLabel.textContent = !locked
+            ? 'Trip Distance (since last fuel)'
+            : reason === 'support'
+                ? 'Trip Distance (not tracked for backup fuel)'
+                : 'Trip Distance (first fill — none yet)';
     }
 
     // ═══════════════════════════════════════════════════════
@@ -482,9 +508,11 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             newQty.textContent = '--';
         }
 
-        // Find previous pending entry
+        // Find previous pending entry. A support fill has no cycle of its own,
+        // so it never inherits the previous tank's preview.
+        const support = isSupportFuel(vehicleType, fuelType);
         let prevEntry = null;
-        if (fuelType && vehicleType) {
+        if (fuelType && vehicleType && !support) {
             const group = entries.filter(e => e.vehicleType === vehicleType && e.fuelType === fuelType);
             group.sort((a, b) => {
                 const dc = a.date.localeCompare(b.date);
@@ -504,7 +532,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             }
         }
 
-        setTripLocked(!prevEntry);
+        setTripLocked(support || !prevEntry, support ? 'support' : 'first');
 
         if (prevEntry) {
             prevBox.classList.remove('hidden');
@@ -528,7 +556,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         } else {
             prevBox.classList.add('hidden');
             prevBox.classList.remove('flex');
-            newTitle.textContent = 'Starting Fuel Cycle';
+            newTitle.textContent = support ? 'Backup / Startup Fuel' : 'Starting Fuel Cycle';
         }
     }
 
@@ -763,7 +791,8 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                 months.set(key, {
                     key, spent: 0, entries: 0, pending: 0,
                     km: 0, spentCompleted: 0,
-                    spentPending: 0, qtyPending: 0, groups: new Map(),
+                    spentPending: 0, qtyPending: 0,
+                    spentSupport: 0, qtySupport: 0, groups: new Map(),
                 });
             }
             const m = months.get(key);
@@ -774,6 +803,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                     vehicleType: e.vehicleType, fuelType: e.fuelType,
                     spent: 0, qty: 0, km: 0, qtyCompleted: 0,
                     spentCompleted: 0, spentPending: 0, qtyPending: 0,
+                    support: isSupportFuel(e.vehicleType, e.fuelType),
                     entries: 0, pending: 0,
                 });
             }
@@ -787,7 +817,11 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             m.spent += spent; m.entries++; m.km += km;
             g.spent += spent; g.qty += qty; g.entries++; g.km += km;
 
-            if (done) {
+            if (e.status === 'support') {
+                // Cost only — never a pending cycle, never part of an average.
+                m.spentSupport += spent;
+                m.qtySupport   += qty;
+            } else if (done) {
                 m.spentCompleted += spent;
                 g.spentCompleted += spent;
                 g.qtyCompleted   += qty;
@@ -848,6 +882,17 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
     function summaryRow(g) {
         const unit    = g.fuelType === 'CNG' ? 'kg' : 'L';
+        if (g.support) {
+            return `<tr class="border-t border-outline-variant/30">
+                <td class="py-sm pr-md whitespace-nowrap font-semibold text-on-surface">
+                    ${VEHICLE_EMOJI[g.vehicleType] || '🚗'} ${esc(g.vehicleType)}
+                    <span class="text-on-surface-variant font-normal">· ${esc(g.fuelType)}</span>
+                </td>
+                <td class="py-sm px-sm text-right whitespace-nowrap">₹${formatNumber(g.spent)}</td>
+                <td class="py-sm px-sm text-right whitespace-nowrap">${formatNumber(g.qty)} ${unit}</td>
+                <td class="py-sm px-sm text-left text-[11px] italic text-on-surface-variant/80" colspan="4">Backup &amp; startup fuel — cost only, no mileage</td>
+            </tr>`;
+        }
         const mileage = groupMileage(g) !== null ? `${groupMileage(g).toFixed(2)} km/${unit}` : '—';
         const costKm  = groupCostPerKm(g) !== null ? `₹${groupCostPerKm(g).toFixed(2)}` : '—';
         const estKm   = groupEstKm(g);
@@ -889,6 +934,10 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
         if (m.km > 0) {
             lines.push(`Of the <b>₹${formatNumber(m.spent)}</b> spent, <b>₹${formatNumber(m.spentCompleted)}</b> has been measured over <b>${formatNumber(m.km)} km</b> — <b>₹${costKm.toFixed(2)} per km</b>.`);
+        }
+
+        if (m.spentSupport > 0) {
+            lines.push(`<b>₹${formatNumber(m.spentSupport)}</b> went into the car's petrol for starting and backup. It counts in the spend and stays out of every mileage figure, because CNG does the driving.`);
         }
 
         if (m.spentPending > 0) {
@@ -948,6 +997,9 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                     <span><b class="text-on-surface">${costKm !== null ? '₹' + costKm.toFixed(2) : '—'}</b> /km</span>
                     <span><b class="text-on-surface">${m.entries}</b> fill${m.entries === 1 ? '' : 's'}</span>
                 </span>
+                ${m.spentSupport > 0 ? `<span class="text-[11px] text-on-surface-variant/80 pl-[28px] leading-snug">
+                    ₹${formatNumber(m.spentSupport)} of that is petrol for starting &amp; backup — cost only, kept out of the average
+                </span>` : ''}
                 ${m.spentPending > 0 ? `<span class="text-[11px] text-tertiary pl-[28px] leading-snug">
                     ₹${formatNumber(m.spentPending)} still in the tank${est !== null ? ` ≈ ${formatNumber(Math.round(est))} km not counted yet (month ≈ ${formatNumber(Math.round(m.km + est))} km)` : ' — distance not counted yet'}
                 </span>` : ''}
@@ -995,6 +1047,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             clone.querySelector('.log-fuel-badge').textContent = entry.fuelType;
             clone.querySelector('.log-vehicle-badge').textContent = `${VEHICLE_EMOJI[entry.vehicleType] || '🚗'} ${entry.vehicleType}`;
 
+            const isSupport = entry.status === 'support';
             const isPending = entry.status === 'pending';
             const kmEl = clone.querySelector('.log-km');
             const costEl = clone.querySelector('.log-cost-km');
@@ -1002,7 +1055,21 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             const statusBadge = clone.querySelector('.log-status-badge');
             const mileageBadge = clone.querySelector('.log-mileage-badge');
 
-            if (isPending) {
+            if (isSupport) {
+                kmEl.textContent = 'Not tracked';
+                kmEl.classList.add('text-sm', 'italic', 'text-on-surface-variant');
+                kmEl.classList.remove('text-xl', 'text-on-surface');
+                clone.querySelector('.log-km-unit')?.remove();
+
+                costEl.textContent = '—';
+                mileageEl.textContent = 'Backup fuel';
+
+                statusBadge.textContent = 'Backup Fuel';
+                statusBadge.classList.remove('completed', 'rotated-1');
+                statusBadge.classList.add('pending', 'rotated-2');
+
+                mileageBadge.classList.add('opacity-50');
+            } else if (isPending) {
                 kmEl.textContent = 'Pending';
                 kmEl.classList.add('text-sm', 'italic', 'text-on-surface-variant');
                 kmEl.classList.remove('text-xl', 'text-on-surface');
