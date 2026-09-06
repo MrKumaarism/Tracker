@@ -651,7 +651,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
         syncFuelTypeForVehicle({ resetPrice: false });
 
-        formHeadingText.textContent = 'Edit Entry';
+        formHeadingText.textContent = 'Edit Fill-Up';
         formIconEl.textContent = 'edit';
         submitBtnText.textContent = 'Update Entry';
         cancelEditBtn.classList.remove('hidden');
@@ -683,7 +683,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         priceInput.value = '83';
         syncFuelTypeForVehicle({ resetPrice: false });
 
-        formHeadingText.textContent = 'Log Fuel Entry';
+        formHeadingText.textContent = 'Log a Fill-Up';
         formIconEl.textContent = 'add_circle';
         submitBtnText.textContent = 'Save Entry';
         cancelEditBtn.classList.add('hidden');
@@ -762,7 +762,8 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             if (!months.has(key)) {
                 months.set(key, {
                     key, spent: 0, entries: 0, pending: 0,
-                    km: 0, spentCompleted: 0, groups: new Map(),
+                    km: 0, spentCompleted: 0,
+                    spentPending: 0, qtyPending: 0, groups: new Map(),
                 });
             }
             const m = months.get(key);
@@ -772,7 +773,8 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                 m.groups.set(gKey, {
                     vehicleType: e.vehicleType, fuelType: e.fuelType,
                     spent: 0, qty: 0, km: 0, qtyCompleted: 0,
-                    spentCompleted: 0, entries: 0, pending: 0,
+                    spentCompleted: 0, spentPending: 0, qtyPending: 0,
+                    entries: 0, pending: 0,
                 });
             }
             const g = m.groups.get(gKey);
@@ -791,7 +793,11 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                 g.qtyCompleted   += qty;
             } else {
                 m.pending++;
+                m.spentPending += spent;
+                m.qtyPending   += qty;
                 g.pending++;
+                g.spentPending += spent;
+                g.qtyPending   += qty;
             }
         });
 
@@ -810,21 +816,56 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         })[c]);
     }
 
+    // A tank's distance only exists once the next fill measures it, so a month
+    // that ends mid-tank always looks shorter than it was. These helpers price
+    // that gap: how much money is still in the tank, and roughly how far it
+    // will carry you at that vehicle's own historical mileage.
+    function lifetimeMileage(vehicleType, fuelType) {
+        let km = 0, qty = 0;
+        entries.forEach(e => {
+            if (e.vehicleType !== vehicleType || e.fuelType !== fuelType) return;
+            if (e.status !== 'completed') return;
+            km  += e.distanceDriven || 0;
+            qty += e.qty || 0;
+        });
+        return qty > 0 && km > 0 ? km / qty : null;
+    }
+
+    function groupEstKm(g) {
+        if (g.qtyPending <= 0) return null;
+        const avg = groupMileage(g) || lifetimeMileage(g.vehicleType, g.fuelType);
+        return avg ? g.qtyPending * avg : null;
+    }
+
+    function monthEstKm(m) {
+        let est = 0, any = false;
+        m.groups.forEach(g => {
+            const km = groupEstKm(g);
+            if (km !== null) { est += km; any = true; }
+        });
+        return any ? est : null;
+    }
+
     function summaryRow(g) {
         const unit    = g.fuelType === 'CNG' ? 'kg' : 'L';
         const mileage = groupMileage(g) !== null ? `${groupMileage(g).toFixed(2)} km/${unit}` : '—';
         const costKm  = groupCostPerKm(g) !== null ? `₹${groupCostPerKm(g).toFixed(2)}` : '—';
+        const estKm   = groupEstKm(g);
+        const inTank  = g.spentPending > 0
+            ? `₹${formatNumber(g.spentPending)}${estKm !== null ? ` <span class="text-on-surface-variant/70">≈${Math.round(estKm)} km</span>` : ''}`
+            : '—';
 
         return `<tr class="border-t border-outline-variant/30">
             <td class="py-sm pr-md whitespace-nowrap font-semibold text-on-surface">
                 ${VEHICLE_EMOJI[g.vehicleType] || '🚗'} ${esc(g.vehicleType)}
                 <span class="text-on-surface-variant font-normal">· ${esc(g.fuelType)}</span>
             </td>
-            <td class="py-sm px-sm text-right whitespace-nowrap">${g.km > 0 ? formatNumber(g.km) : '—'}</td>
             <td class="py-sm px-sm text-right whitespace-nowrap">₹${formatNumber(g.spent)}</td>
             <td class="py-sm px-sm text-right whitespace-nowrap">${formatNumber(g.qty)} ${unit}</td>
+            <td class="py-sm px-sm text-right whitespace-nowrap">${g.km > 0 ? formatNumber(g.km) : '—'}</td>
             <td class="py-sm px-sm text-right whitespace-nowrap font-semibold text-primary">${mileage}</td>
-            <td class="py-sm pl-sm text-right whitespace-nowrap">${costKm}</td>
+            <td class="py-sm px-sm text-right whitespace-nowrap">${costKm}</td>
+            <td class="py-sm pl-sm text-right whitespace-nowrap">${inTank}</td>
         </tr>`;
     }
 
@@ -841,11 +882,23 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     }
 
     // Plain-language takeaways. Anything that cannot be computed honestly is
-    // left out rather than printed as a dash.
+    // left out rather than printed as a dash or a misleading average.
     function monthTakeaways(m, prev) {
         const lines = [];
-        const measured = [...m.groups.values()].filter(g => groupMileage(g) !== null);
+        const costKm = monthCostPerKm(m);
 
+        if (m.km > 0) {
+            lines.push(`Of the <b>₹${formatNumber(m.spent)}</b> spent, <b>₹${formatNumber(m.spentCompleted)}</b> has been measured over <b>${formatNumber(m.km)} km</b> — <b>₹${costKm.toFixed(2)} per km</b>.`);
+        }
+
+        if (m.spentPending > 0) {
+            const est = monthEstKm(m);
+            lines.push(est !== null
+                ? `<b>₹${formatNumber(m.spentPending)}</b> is still in the tank. At your usual mileage that is about <b>${formatNumber(Math.round(est))} km</b> not counted yet, so the month is closer to <b>~${formatNumber(Math.round(m.km + est))} km</b>.`
+                : `<b>₹${formatNumber(m.spentPending)}</b> is still in the tank and has no mileage history yet, so its distance is missing from this month.`);
+        }
+
+        const measured = [...m.groups.values()].filter(g => groupMileage(g) !== null);
         if (measured.length > 0) {
             const best = measured.reduce((a, b) => (groupMileage(b) > groupMileage(a) ? b : a));
             const unit = best.fuelType === 'CNG' ? 'km/kg' : 'km/L';
@@ -863,10 +916,6 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             if (spendPct !== null && Math.abs(spendPct) >= 1) {
                 bits.push(`spend ${spendPct > 0 ? 'up' : 'down'} ${Math.abs(spendPct).toFixed(0)}%`);
             }
-            const kmPct = prev.km > 0 && m.km > 0 ? ((m.km - prev.km) / prev.km) * 100 : null;
-            if (kmPct !== null && Math.abs(kmPct) >= 1) {
-                bits.push(`distance ${kmPct > 0 ? 'up' : 'down'} ${Math.abs(kmPct).toFixed(0)}%`);
-            }
             const cur = monthCostPerKm(m), old = monthCostPerKm(prev);
             if (cur !== null && old !== null && Math.abs(cur - old) >= 0.01) {
                 bits.push(`running cost ${cur > old ? 'up' : 'down'} ₹${Math.abs(cur - old).toFixed(2)}/km`);
@@ -874,15 +923,12 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             if (bits.length) lines.push(`vs ${esc(monthLabel(prev.key))}: ${bits.join(', ')}.`);
         }
 
-        if (m.pending > 0) {
-            lines.push(`${m.pending} tank${m.pending === 1 ? '' : 's'} still running — the distance lands here once you log the next fill for that vehicle.`);
-        }
-
         return lines;
     }
 
     function monthSectionHtml(m, prev, open) {
         const costKm = monthCostPerKm(m);
+        const est    = m.spentPending > 0 ? monthEstKm(m) : null;
         const rows = [...m.groups.values()].sort((a, b) => b.spent - a.spent).map(summaryRow).join('');
         const takeaways = monthTakeaways(m, prev)
             .map(t => `<li class="flex gap-sm"><span class="text-primary">▪</span><span>${t}</span></li>`)
@@ -895,14 +941,16 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                         <span class="material-symbols-outlined text-[20px] text-primary month-chevron">expand_more</span>
                         <span class="font-bold text-on-surface truncate">${esc(monthLabel(m.key))}</span>
                     </span>
-                    <span class="text-base font-bold text-primary whitespace-nowrap">₹${formatNumber(m.spent)}</span>
+                    <span class="text-base font-bold text-primary whitespace-nowrap">₹${formatNumber(m.spent)} spent</span>
                 </span>
                 <span class="flex flex-wrap items-center gap-x-md gap-y-xs text-xs text-on-surface-variant pl-[28px]">
-                    <span><b class="text-on-surface">${formatNumber(m.km)}</b> km</span>
+                    <span><b class="text-on-surface">${formatNumber(m.km)}</b> km measured</span>
                     <span><b class="text-on-surface">${costKm !== null ? '₹' + costKm.toFixed(2) : '—'}</b> /km</span>
                     <span><b class="text-on-surface">${m.entries}</b> fill${m.entries === 1 ? '' : 's'}</span>
-                    ${m.pending ? `<span class="text-tertiary">${m.pending} pending</span>` : ''}
                 </span>
+                ${m.spentPending > 0 ? `<span class="text-[11px] text-tertiary pl-[28px] leading-snug">
+                    ₹${formatNumber(m.spentPending)} still in the tank${est !== null ? ` ≈ ${formatNumber(Math.round(est))} km not counted yet (month ≈ ${formatNumber(Math.round(m.km + est))} km)` : ' — distance not counted yet'}
+                </span>` : ''}
             </summary>
             <div class="px-md pb-md flex flex-col gap-md">
                 ${takeaways ? `<ul class="flex flex-col gap-xs text-sm text-on-surface-variant">${takeaways}</ul>` : ''}
@@ -911,11 +959,12 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                         <thead>
                             <tr class="text-[10px] uppercase tracking-wider text-on-surface-variant/70">
                                 <th class="text-left font-bold pb-xs">Vehicle · Fuel</th>
-                                <th class="text-right font-bold pb-xs px-sm">Km</th>
                                 <th class="text-right font-bold pb-xs px-sm">Spent</th>
                                 <th class="text-right font-bold pb-xs px-sm">Fuel</th>
+                                <th class="text-right font-bold pb-xs px-sm">Km measured</th>
                                 <th class="text-right font-bold pb-xs px-sm">Avg</th>
-                                <th class="text-right font-bold pb-xs pl-sm">₹/km</th>
+                                <th class="text-right font-bold pb-xs px-sm">₹/km</th>
+                                <th class="text-right font-bold pb-xs pl-sm">Still in tank</th>
                             </tr>
                         </thead>
                         <tbody>${rows}</tbody>

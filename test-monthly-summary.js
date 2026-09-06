@@ -51,4 +51,13 @@ assert.strictEqual(scooty.qtyCompleted, 0);
 assert.strictEqual(months[0].spent, 500);
 assert.strictEqual(months[0].km, 0);
 
+// Money and fuel sitting in an unmeasured tank are tracked separately, so the
+// month can say "you also drove on this" instead of pretending it never happened
+assert.strictEqual(sep.spentPending, 519);
+assert.strictEqual(sep.qtyPending, 5.088);
+assert.strictEqual(scooty.spentPending, 519);
+assert.strictEqual(scooty.qtyPending, 5.088);
+assert.strictEqual(carCng.spentPending, 0);
+assert.strictEqual(months[0].spentPending, 500);
+
 console.log('monthly summary: all assertions passed');
