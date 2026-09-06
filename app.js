@@ -86,7 +86,6 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
     // History
     const historyList      = $('#history-list');
-    const historySummary   = $('#history-summary');
     const historyEmpty     = $('#history-empty-state');
     const historySearch    = $('#historySearch');
     const historyFilters   = $('#historyFilters');
@@ -811,20 +810,10 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         })[c]);
     }
 
-    function statTile(label, value, sub) {
-        return `<div class="flex flex-col gap-[2px] px-md py-sm bg-surface-container rounded-lg min-w-0">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant truncate">${esc(label)}</span>
-            <span class="text-lg font-bold text-on-surface truncate">${value}</span>
-            ${sub ? `<span class="text-[11px] text-on-surface-variant truncate">${sub}</span>` : ''}
-        </div>`;
-    }
-
     function summaryRow(g) {
         const unit    = g.fuelType === 'CNG' ? 'kg' : 'L';
-        const mileage = g.qtyCompleted > 0 && g.km > 0
-            ? `${(g.km / g.qtyCompleted).toFixed(2)} km/${unit}`
-            : '—';
-        const costKm  = g.km > 0 ? `₹${(g.spentCompleted / g.km).toFixed(2)}` : '—';
+        const mileage = groupMileage(g) !== null ? `${groupMileage(g).toFixed(2)} km/${unit}` : '—';
+        const costKm  = groupCostPerKm(g) !== null ? `₹${groupCostPerKm(g).toFixed(2)}` : '—';
 
         return `<tr class="border-t border-outline-variant/30">
             <td class="py-sm pr-md whitespace-nowrap font-semibold text-on-surface">
@@ -839,113 +828,108 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         </tr>`;
     }
 
-    function renderMonthlySummary(list) {
-        if (!historySummary) return;
-
-        const months = buildMonthlySummary(list);
-        if (months.length === 0) {
-            historySummary.classList.add('hidden');
-            historySummary.classList.remove('flex');
-            historySummary.innerHTML = '';
-            return;
-        }
-
-        historySummary.classList.remove('hidden');
-        historySummary.classList.add('flex');
-
-        historySummary.innerHTML = months.map((m, i) => {
-            const costKm = m.km > 0 ? `₹${(m.spentCompleted / m.km).toFixed(2)}` : '—';
-            const rows   = [...m.groups.values()]
-                .sort((a, b) => b.spent - a.spent)
-                .map(summaryRow).join('');
-
-            return `<details class="bg-surface-container-low border border-outline-variant/40 rounded-xl overflow-hidden" ${i === 0 ? 'open' : ''}>
-                <summary class="cursor-pointer list-none px-md py-md flex items-center justify-between gap-md hover:bg-surface-container transition-colors">
-                    <span class="flex items-center gap-sm min-w-0">
-                        <span class="material-symbols-outlined text-[20px] text-primary">calendar_month</span>
-                        <span class="font-bold text-on-surface truncate">${esc(monthLabel(m.key))}</span>
-                        <span class="text-xs text-on-surface-variant whitespace-nowrap">${m.entries} fill${m.entries === 1 ? '' : 's'}${m.pending ? ' · ' + m.pending + ' pending' : ''}</span>
-                    </span>
-                    <span class="text-sm font-bold text-primary whitespace-nowrap">₹${formatNumber(m.spent)}</span>
-                </summary>
-                <div class="px-md pb-md flex flex-col gap-md">
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-sm">
-                        ${statTile('Spent', '₹' + formatNumber(m.spent), m.pending ? m.pending + ' tank(s) still running' : 'all tanks measured')}
-                        ${statTile('Distance', formatNumber(m.km) + ' km', 'from measured tanks')}
-                        ${statTile('Running cost', costKm, 'per km')}
-                        ${statTile('Fills', String(m.entries), m.groups.size + ' vehicle/fuel combo' + (m.groups.size === 1 ? '' : 's'))}
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm text-on-surface-variant">
-                            <thead>
-                                <tr class="text-[10px] uppercase tracking-wider text-on-surface-variant/70">
-                                    <th class="text-left font-bold pb-xs">Vehicle · Fuel</th>
-                                    <th class="text-right font-bold pb-xs px-sm">Km</th>
-                                    <th class="text-right font-bold pb-xs px-sm">Spent</th>
-                                    <th class="text-right font-bold pb-xs px-sm">Fuel</th>
-                                    <th class="text-right font-bold pb-xs px-sm">Avg</th>
-                                    <th class="text-right font-bold pb-xs pl-sm">₹/km</th>
-                                </tr>
-                            </thead>
-                            <tbody>${rows}</tbody>
-                        </table>
-                    </div>
-                    <p class="text-[11px] text-on-surface-variant/80 leading-snug">
-                        Distance and mileage come from tanks bought this month that a later fill has already measured. The newest tank of each vehicle stays pending until you log the next one.
-                    </p>
-                </div>
-            </details>`;
-        }).join('');
+    function groupMileage(g) {
+        return g.qtyCompleted > 0 && g.km > 0 ? g.km / g.qtyCompleted : null;
     }
 
-    function renderHistory() {
-        const searchTerm = historySearch ? historySearch.value.toLowerCase().trim() : '';
+    function groupCostPerKm(g) {
+        return g.km > 0 ? g.spentCompleted / g.km : null;
+    }
 
-        let filtered = [...entries];
+    function monthCostPerKm(m) {
+        return m.km > 0 ? m.spentCompleted / m.km : null;
+    }
 
-        // Apply filter
-        if (activeFilter !== 'All') {
-            filtered = filtered.filter(e =>
-                e.fuelType === activeFilter || e.vehicleType === activeFilter
-            );
+    // Plain-language takeaways. Anything that cannot be computed honestly is
+    // left out rather than printed as a dash.
+    function monthTakeaways(m, prev) {
+        const lines = [];
+        const measured = [...m.groups.values()].filter(g => groupMileage(g) !== null);
+
+        if (measured.length > 0) {
+            const best = measured.reduce((a, b) => (groupMileage(b) > groupMileage(a) ? b : a));
+            const unit = best.fuelType === 'CNG' ? 'km/kg' : 'km/L';
+            lines.push(`${VEHICLE_EMOJI[best.vehicleType] || '🚗'} <b>${esc(best.vehicleType)} · ${esc(best.fuelType)}</b> gave the best mileage: <b>${groupMileage(best).toFixed(2)} ${unit}</b> at ₹${groupCostPerKm(best).toFixed(2)}/km.`);
+
+            if (measured.length > 1) {
+                const dear = measured.reduce((a, b) => (groupCostPerKm(b) > groupCostPerKm(a) ? b : a));
+                lines.push(`Costliest to run was ${VEHICLE_EMOJI[dear.vehicleType] || '🚗'} <b>${esc(dear.vehicleType)} · ${esc(dear.fuelType)}</b> at <b>₹${groupCostPerKm(dear).toFixed(2)}/km</b>.`);
+            }
         }
 
-        // Apply search
-        if (searchTerm) {
-            filtered = filtered.filter(e =>
-                e.fuelType.toLowerCase().includes(searchTerm) ||
-                e.vehicleType.toLowerCase().includes(searchTerm) ||
-                e.date.includes(searchTerm) ||
-                String(e.km).includes(searchTerm) ||
-                String(e.spent).includes(searchTerm)
-            );
+        if (prev) {
+            const bits = [];
+            const spendPct = prev.spent > 0 ? ((m.spent - prev.spent) / prev.spent) * 100 : null;
+            if (spendPct !== null && Math.abs(spendPct) >= 1) {
+                bits.push(`spend ${spendPct > 0 ? 'up' : 'down'} ${Math.abs(spendPct).toFixed(0)}%`);
+            }
+            const kmPct = prev.km > 0 && m.km > 0 ? ((m.km - prev.km) / prev.km) * 100 : null;
+            if (kmPct !== null && Math.abs(kmPct) >= 1) {
+                bits.push(`distance ${kmPct > 0 ? 'up' : 'down'} ${Math.abs(kmPct).toFixed(0)}%`);
+            }
+            const cur = monthCostPerKm(m), old = monthCostPerKm(prev);
+            if (cur !== null && old !== null && Math.abs(cur - old) >= 0.01) {
+                bits.push(`running cost ${cur > old ? 'up' : 'down'} ₹${Math.abs(cur - old).toFixed(2)}/km`);
+            }
+            if (bits.length) lines.push(`vs ${esc(monthLabel(prev.key))}: ${bits.join(', ')}.`);
         }
 
-        // Sort latest first
-        filtered.sort((a, b) => {
-            const dc = b.date.localeCompare(a.date);
-            return dc !== 0 ? dc : b.createdAt - a.createdAt;
-        });
-
-        renderMonthlySummary(filtered);
-
-        // Show/hide states
-        if (filtered.length === 0) {
-            historyEmpty.classList.remove('hidden');
-            historyEmpty.classList.add('flex');
-            historyList.classList.add('hidden');
-            historyList.classList.remove('grid');
-        } else {
-            historyEmpty.classList.add('hidden');
-            historyEmpty.classList.remove('flex');
-            historyList.classList.remove('hidden');
-            historyList.classList.add('grid');
+        if (m.pending > 0) {
+            lines.push(`${m.pending} tank${m.pending === 1 ? '' : 's'} still running — the distance lands here once you log the next fill for that vehicle.`);
         }
 
-        // Clear & rebuild
-        historyList.innerHTML = '';
+        return lines;
+    }
 
-        filtered.forEach((entry, index) => {
+    function monthSectionHtml(m, prev, open) {
+        const costKm = monthCostPerKm(m);
+        const rows = [...m.groups.values()].sort((a, b) => b.spent - a.spent).map(summaryRow).join('');
+        const takeaways = monthTakeaways(m, prev)
+            .map(t => `<li class="flex gap-sm"><span class="text-primary">▪</span><span>${t}</span></li>`)
+            .join('');
+
+        return `<details class="month-block bg-surface-container-low border border-outline-variant/40 rounded-xl overflow-hidden" ${open ? 'open' : ''}>
+            <summary class="cursor-pointer list-none px-md py-md flex flex-col gap-xs hover:bg-surface-container transition-colors">
+                <span class="flex items-center justify-between gap-md">
+                    <span class="flex items-center gap-sm min-w-0">
+                        <span class="material-symbols-outlined text-[20px] text-primary month-chevron">expand_more</span>
+                        <span class="font-bold text-on-surface truncate">${esc(monthLabel(m.key))}</span>
+                    </span>
+                    <span class="text-base font-bold text-primary whitespace-nowrap">₹${formatNumber(m.spent)}</span>
+                </span>
+                <span class="flex flex-wrap items-center gap-x-md gap-y-xs text-xs text-on-surface-variant pl-[28px]">
+                    <span><b class="text-on-surface">${formatNumber(m.km)}</b> km</span>
+                    <span><b class="text-on-surface">${costKm !== null ? '₹' + costKm.toFixed(2) : '—'}</b> /km</span>
+                    <span><b class="text-on-surface">${m.entries}</b> fill${m.entries === 1 ? '' : 's'}</span>
+                    ${m.pending ? `<span class="text-tertiary">${m.pending} pending</span>` : ''}
+                </span>
+            </summary>
+            <div class="px-md pb-md flex flex-col gap-md">
+                ${takeaways ? `<ul class="flex flex-col gap-xs text-sm text-on-surface-variant">${takeaways}</ul>` : ''}
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-on-surface-variant">
+                        <thead>
+                            <tr class="text-[10px] uppercase tracking-wider text-on-surface-variant/70">
+                                <th class="text-left font-bold pb-xs">Vehicle · Fuel</th>
+                                <th class="text-right font-bold pb-xs px-sm">Km</th>
+                                <th class="text-right font-bold pb-xs px-sm">Spent</th>
+                                <th class="text-right font-bold pb-xs px-sm">Fuel</th>
+                                <th class="text-right font-bold pb-xs px-sm">Avg</th>
+                                <th class="text-right font-bold pb-xs pl-sm">₹/km</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+                <div class="flex flex-col gap-sm">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant/70">Fills this month</span>
+                    <div class="month-cards grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-md lg:gap-lg auto-rows-max w-full"></div>
+                </div>
+            </div>
+        </details>`;
+    }
+
+    function buildEntryCard(entry, index) {
             const clone = cardTemplate.content.cloneNode(true);
             const card = clone.querySelector('.ticket-card');
 
@@ -1007,9 +991,77 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                 e.stopPropagation();
                 deleteEntry(entry.id);
             });
+        return clone;
+    }
 
-            historyList.appendChild(clone);
+    function renderHistory() {
+        const searchTerm = historySearch ? historySearch.value.toLowerCase().trim() : '';
+
+        let filtered = [...entries];
+
+        // Apply filter
+        if (activeFilter !== 'All') {
+            filtered = filtered.filter(e =>
+                e.fuelType === activeFilter || e.vehicleType === activeFilter
+            );
+        }
+
+        // Apply search
+        if (searchTerm) {
+            filtered = filtered.filter(e =>
+                e.fuelType.toLowerCase().includes(searchTerm) ||
+                e.vehicleType.toLowerCase().includes(searchTerm) ||
+                e.date.includes(searchTerm) ||
+                String(e.km).includes(searchTerm) ||
+                String(e.spent).includes(searchTerm)
+            );
+        }
+
+        // Sort latest first
+        filtered.sort((a, b) => {
+            const dc = b.date.localeCompare(a.date);
+            return dc !== 0 ? dc : b.createdAt - a.createdAt;
         });
+
+        // Show/hide states
+        if (filtered.length === 0) {
+            historyEmpty.classList.remove('hidden');
+            historyEmpty.classList.add('flex');
+            historyList.classList.add('hidden');
+            historyList.classList.remove('flex');
+        } else {
+            historyEmpty.classList.add('hidden');
+            historyEmpty.classList.remove('flex');
+            historyList.classList.remove('hidden');
+            historyList.classList.add('flex');
+        }
+
+        // Clear & rebuild — every fill lives inside its own month block, so
+        // collapsing a month hides its cards too. Nothing floats loose.
+        historyList.innerHTML = '';
+
+        const months = buildMonthlySummary(filtered);
+        const undated = filtered.filter(e => !(e.date || '').slice(0, 7));
+
+        months.forEach((m, i) => {
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = monthSectionHtml(m, months[i + 1] || null, i === 0);
+            const section = wrapper.firstElementChild;
+            const grid = section.querySelector('.month-cards');
+
+            filtered
+                .filter(e => (e.date || '').slice(0, 7) === m.key)
+                .forEach((entry, idx) => grid.appendChild(buildEntryCard(entry, idx)));
+
+            historyList.appendChild(section);
+        });
+
+        if (undated.length > 0) {
+            const loose = document.createElement('div');
+            loose.className = 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-md lg:gap-lg auto-rows-max w-full';
+            undated.forEach((entry, idx) => loose.appendChild(buildEntryCard(entry, idx)));
+            historyList.appendChild(loose);
+        }
     }
 
     function updateDataPage() {

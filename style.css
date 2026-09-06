@@ -328,3 +328,8 @@ button:focus-visible, a:focus-visible {
 /* History monthly summary: hide the native disclosure triangle */
 #history-summary summary::-webkit-details-marker { display: none; }
 #history-summary summary { list-style: none; }
+
+#history-summary summary, .month-block > summary { list-style: none; }
+#history-summary summary::-webkit-details-marker, .month-block > summary::-webkit-details-marker { display: none; }
+.month-block > summary .month-chevron { transition: transform 150ms ease; }
+.month-block[open] > summary .month-chevron { transform: rotate(180deg); }
