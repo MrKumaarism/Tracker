@@ -1033,7 +1033,8 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     // A backup fill has no cycle, no distance and no mileage — only a date, an
     // amount and a price. Rendering it in the full ticket card left half the
     // fields reading "Not tracked" and looked like a CNG cycle at a glance, so
-    // it gets its own slim full-width strip.
+    // it gets its own slim full-width strip. Read only by request: it is a
+    // spend note, not a cycle, so it carries no edit or delete affordance.
     function buildSupportStrip(entry, index) {
         const row = document.createElement('div');
         row.className = 'col-span-full flex items-center gap-md px-md py-sm rounded-lg border border-dashed border-outline-variant bg-surface-container-lowest animate-fade-in-up';
@@ -1051,24 +1052,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                 </span>
                 <span class="text-[11px] text-on-surface-variant/80 truncate">${litres} at ${price} · starting &amp; reserve only, no mileage</span>
             </span>
-            <span class="text-base font-bold text-on-surface whitespace-nowrap">₹${formatNumber(entry.spent)}</span>
-            <span class="flex items-center gap-xs">
-                <button type="button" class="edit-btn p-xs rounded-full hover:bg-surface-container transition-colors" aria-label="Edit backup fill">
-                    <span class="material-symbols-outlined text-[18px] text-on-surface-variant">edit</span>
-                </button>
-                <button type="button" class="delete-btn p-xs rounded-full hover:bg-surface-container transition-colors" aria-label="Delete backup fill">
-                    <span class="material-symbols-outlined text-[18px] text-on-surface-variant">delete</span>
-                </button>
-            </span>`;
-
-        row.querySelector('.edit-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            startEdit(entry.id);
-        });
-        row.querySelector('.delete-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            deleteEntry(entry.id);
-        });
+            <span class="text-base font-bold text-on-surface whitespace-nowrap">₹${formatNumber(entry.spent)}</span>`;
 
         return row;
     }
