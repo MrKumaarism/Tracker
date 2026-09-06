@@ -73,6 +73,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     const submitBtn      = $('#submitBtn');
     const submitBtnText  = $('#submitBtnText');
     const cancelEditBtn  = $('#cancelEditBtn');
+    const deleteEditBtn  = $('#deleteEditBtn');
     const formHeadingText = $('#formHeadingText');
     const formIconEl     = $('#formIconEl');
 
@@ -382,6 +383,9 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     function bindEvents() {
         fuelForm.addEventListener('submit', handleSubmit);
         cancelEditBtn.addEventListener('click', cancelEdit);
+        deleteEditBtn.addEventListener('click', () => {
+            if (editingId) deleteEntry(editingId);
+        });
 
         if (sidebarLoginBtn) sidebarLoginBtn.addEventListener('click', handleLoginClick);
         if (mobileLoginBtn) mobileLoginBtn.addEventListener('click', handleLoginClick);
@@ -683,6 +687,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         formIconEl.textContent = 'edit';
         submitBtnText.textContent = 'Update Entry';
         cancelEditBtn.classList.remove('hidden');
+        deleteEditBtn.classList.remove('hidden');
 
         calculateLive();
         navigate('dashboard');
@@ -715,6 +720,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         formIconEl.textContent = 'add_circle';
         submitBtnText.textContent = 'Save Entry';
         cancelEditBtn.classList.add('hidden');
+        deleteEditBtn.classList.add('hidden');
 
         calculateLive();
     }
@@ -722,6 +728,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     // ─── Delete ───
     async function deleteEntry(id) {
         showConfirm('Delete this fuel entry?', async () => {
+            if (editingId === id) resetForm();
             entries = entries.filter(en => en.id !== id);
             if (currentUser) {
                 try { await deleteEntryFirestore(id); } catch(e) { console.error(e); }
@@ -1033,11 +1040,15 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     // A backup fill has no cycle, no distance and no mileage — only a date, an
     // amount and a price. Rendering it in the full ticket card left half the
     // fields reading "Not tracked" and looked like a CNG cycle at a glance, so
-    // it gets its own slim full-width strip. Read only by request: it is a
-    // spend note, not a cycle, so it carries no edit or delete affordance.
+    // it gets its own slim full-width strip. It carries no button row — that
+    // read like a cycle card — but the strip itself opens the entry for
+    // editing, flagged by a muted pencil, so a mistyped amount is fixable.
     function buildSupportStrip(entry, index) {
         const row = document.createElement('div');
-        row.className = 'col-span-full flex items-center gap-md px-md py-sm rounded-lg border border-dashed border-outline-variant bg-surface-container-lowest animate-fade-in-up';
+        row.className = 'col-span-full flex items-center gap-md px-md py-sm rounded-lg border border-dashed border-outline-variant bg-surface-container-lowest animate-fade-in-up cursor-pointer hover:bg-surface-container transition-colors';
+        row.setAttribute('role', 'button');
+        row.setAttribute('tabindex', '0');
+        row.setAttribute('aria-label', `Edit backup petrol fill of ₹${formatNumber(entry.spent)} on ${formatDatePretty(entry.date)}`);
         row.style.animationDelay = `${index * 50}ms`;
 
         const litres = entry.qty ? `${formatNumber(entry.qty)} L` : '—';
@@ -1052,7 +1063,17 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                 </span>
                 <span class="text-[11px] text-on-surface-variant/80 truncate">${litres} at ${price} · starting &amp; reserve only, no mileage</span>
             </span>
-            <span class="text-base font-bold text-on-surface whitespace-nowrap">₹${formatNumber(entry.spent)}</span>`;
+            <span class="text-base font-bold text-on-surface whitespace-nowrap">₹${formatNumber(entry.spent)}</span>
+            <span class="material-symbols-outlined text-[16px] text-on-surface-variant/50">edit</span>`;
+
+        const open = () => startEdit(entry.id);
+        row.addEventListener('click', open);
+        row.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                open();
+            }
+        });
 
         return row;
     }
