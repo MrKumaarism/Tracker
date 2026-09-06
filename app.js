@@ -1030,7 +1030,52 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         </details>`;
     }
 
+    // A backup fill has no cycle, no distance and no mileage — only a date, an
+    // amount and a price. Rendering it in the full ticket card left half the
+    // fields reading "Not tracked" and looked like a CNG cycle at a glance, so
+    // it gets its own slim full-width strip.
+    function buildSupportStrip(entry, index) {
+        const row = document.createElement('div');
+        row.className = 'col-span-full flex items-center gap-md px-md py-sm rounded-lg border border-dashed border-outline-variant bg-surface-container-lowest animate-fade-in-up';
+        row.style.animationDelay = `${index * 50}ms`;
+
+        const litres = entry.qty ? `${formatNumber(entry.qty)} L` : '—';
+        const price  = entry.price ? `₹${entry.price.toFixed(2)}/L` : '—';
+
+        row.innerHTML = `
+            <span class="material-symbols-outlined text-[18px] text-on-surface-variant/70">local_gas_station</span>
+            <span class="flex flex-col min-w-0 flex-1 gap-[1px]">
+                <span class="text-sm text-on-surface truncate">
+                    <b>Backup petrol</b>
+                    <span class="text-on-surface-variant">· ${VEHICLE_EMOJI[entry.vehicleType] || '🚗'} ${esc(entry.vehicleType)} · ${esc(formatDatePretty(entry.date))}</span>
+                </span>
+                <span class="text-[11px] text-on-surface-variant/80 truncate">${litres} at ${price} · starting &amp; reserve only, no mileage</span>
+            </span>
+            <span class="text-base font-bold text-on-surface whitespace-nowrap">₹${formatNumber(entry.spent)}</span>
+            <span class="flex items-center gap-xs">
+                <button type="button" class="edit-btn p-xs rounded-full hover:bg-surface-container transition-colors" aria-label="Edit backup fill">
+                    <span class="material-symbols-outlined text-[18px] text-on-surface-variant">edit</span>
+                </button>
+                <button type="button" class="delete-btn p-xs rounded-full hover:bg-surface-container transition-colors" aria-label="Delete backup fill">
+                    <span class="material-symbols-outlined text-[18px] text-on-surface-variant">delete</span>
+                </button>
+            </span>`;
+
+        row.querySelector('.edit-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            startEdit(entry.id);
+        });
+        row.querySelector('.delete-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteEntry(entry.id);
+        });
+
+        return row;
+    }
+
     function buildEntryCard(entry, index) {
+            if (entry.status === 'support') return buildSupportStrip(entry, index);
+
             const clone = cardTemplate.content.cloneNode(true);
             const card = clone.querySelector('.ticket-card');
 
@@ -1047,7 +1092,6 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             clone.querySelector('.log-fuel-badge').textContent = entry.fuelType;
             clone.querySelector('.log-vehicle-badge').textContent = `${VEHICLE_EMOJI[entry.vehicleType] || '🚗'} ${entry.vehicleType}`;
 
-            const isSupport = entry.status === 'support';
             const isPending = entry.status === 'pending';
             const kmEl = clone.querySelector('.log-km');
             const costEl = clone.querySelector('.log-cost-km');
@@ -1055,21 +1099,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             const statusBadge = clone.querySelector('.log-status-badge');
             const mileageBadge = clone.querySelector('.log-mileage-badge');
 
-            if (isSupport) {
-                kmEl.textContent = 'Not tracked';
-                kmEl.classList.add('text-sm', 'italic', 'text-on-surface-variant');
-                kmEl.classList.remove('text-xl', 'text-on-surface');
-                clone.querySelector('.log-km-unit')?.remove();
-
-                costEl.textContent = '—';
-                mileageEl.textContent = 'Backup fuel';
-
-                statusBadge.textContent = 'Backup Fuel';
-                statusBadge.classList.remove('completed', 'rotated-1');
-                statusBadge.classList.add('pending', 'rotated-2');
-
-                mileageBadge.classList.add('opacity-50');
-            } else if (isPending) {
+            if (isPending) {
                 kmEl.textContent = 'Pending';
                 kmEl.classList.add('text-sm', 'italic', 'text-on-surface-variant');
                 kmEl.classList.remove('text-xl', 'text-on-surface');

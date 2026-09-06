@@ -11,7 +11,7 @@
    network does not.
    ═══════════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'fuel-tracker-v21';
+const CACHE_NAME = 'fuel-tracker-v22';
 
 // How long to wait for the network before falling back to cache. Without a
 // timeout, "connected to wifi with no internet" hangs the app instead of
