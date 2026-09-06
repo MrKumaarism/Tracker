@@ -16,6 +16,10 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const dbFirestore = getFirestore(app);
 
+// Badge icon per vehicle type. Falls back to the car emoji for anything older
+// than this list, e.g. rows imported from a CSV with a type no longer offered.
+const VEHICLE_EMOJI = { Car: '🚗', Bike: '🏍️', Scooty: '🛵' };
+
 enableIndexedDbPersistence(dbFirestore).catch((err) => {
     console.warn("Firestore offline persistence error:", err);
 });
@@ -755,7 +759,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             clone.querySelector('.log-price').textContent = entry.price ? entry.price.toFixed(2) : '—';
             clone.querySelector('.log-price-unit').textContent = entry.fuelType === 'CNG' ? '/kg' : '/L';
             clone.querySelector('.log-fuel-badge').textContent = entry.fuelType;
-            clone.querySelector('.log-vehicle-badge').textContent = `${entry.vehicleType === 'Car' ? '🚗' : '🏍️'} ${entry.vehicleType}`;
+            clone.querySelector('.log-vehicle-badge').textContent = `${VEHICLE_EMOJI[entry.vehicleType] || '🚗'} ${entry.vehicleType}`;
 
             const isPending = entry.status === 'pending';
             const kmEl = clone.querySelector('.log-km');
