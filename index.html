@@ -256,9 +256,9 @@
                                             <input type="radio" name="fuelType" value="Petrol" class="peer sr-only">
                                             <div class="px-md py-sm border border-outline text-center text-sm text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary transition-all font-bold">Petrol</div>
                                         </label>
-                                        <label class="flex-1 cursor-pointer">
+                                        <label class="flex-1 cursor-pointer" id="cngOption">
                                             <input type="radio" name="fuelType" value="CNG" checked class="peer sr-only">
-                                            <div class="px-md py-sm border border-outline text-center text-sm text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary transition-all font-bold">CNG</div>
+                                            <div class="px-md py-sm border border-outline text-center text-sm text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary peer-disabled:opacity-40 transition-all font-bold">CNG</div>
                                         </label>
                                     </div>
                                 </div>
@@ -290,8 +290,9 @@
                             <!-- Numeric Inputs -->
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-md">
                                 <div class="flex flex-col gap-xs">
-                                    <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider" for="kmDriven">Trip Distance (since last fuel)</label>
+                                    <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider" for="kmDriven" id="kmDrivenLabel">Trip Distance (since last fuel)</label>
                                     <input class="w-full bg-transparent text-on-surface text-base px-sm py-sm outline-none border-b border-outline-variant focus:border-primary transition-colors" id="kmDriven" type="number" min="0" step="0.1" placeholder="0.0" required>
+                                    <p class="hidden text-[11px] text-on-surface-variant leading-snug" id="kmDrivenHint">First fill for this vehicle &amp; fuel &mdash; there is no previous tank to measure, so leave this at 0. Your next fill records the distance.</p>
                                 </div>
                                 <div class="flex flex-col gap-xs">
                                     <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider" for="fuelPrice">Fuel Price (<span id="fuel-price-unit-label">₹/kg</span>)</label>

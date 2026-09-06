@@ -51,6 +51,9 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     const fuelForm       = $('#fuelForm');
     const editIdInput    = $('#editId');
     const kmInput        = $('#kmDriven');
+    const kmLabel        = $('#kmDrivenLabel');
+    const kmHint         = $('#kmDrivenHint');
+    const cngOption      = $('#cngOption');
     const priceInput     = $('#fuelPrice');
     const spentInput     = $('#amountSpent');
     const dateInput      = $('#entryDate');
@@ -115,6 +118,8 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         setDefaultDate();
         bindEvents();
         initNavigation();
+        syncFuelTypeForVehicle({ resetPrice: false });
+        calculateLive();
 
         // Initialize Firebase Auth which will load data
         initAuth();
@@ -379,7 +384,10 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         });
         
         $$('input[name="vehicleType"]').forEach(radio => {
-            radio.addEventListener('change', calculateLive);
+            radio.addEventListener('change', () => {
+                syncFuelTypeForVehicle();
+                calculateLive();
+            });
         });
 
         // History filters
@@ -405,6 +413,41 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
         // Confirm dialog
         confirmNo.addEventListener('click', () => confirmOverlay.classList.add('hidden'));
+    }
+
+    // Only the car runs on CNG. Bike and Scooty are petrol-only, so selecting
+    // either forces Petrol and locks CNG out instead of silently saving a
+    // CNG entry against a petrol vehicle.
+    function syncFuelTypeForVehicle({ resetPrice = true } = {}) {
+        const vehRadio    = $('input[name="vehicleType"]:checked');
+        const cngRadio    = $('input[name="fuelType"][value="CNG"]');
+        const petrolRadio = $('input[name="fuelType"][value="Petrol"]');
+        if (!vehRadio || !cngRadio || !petrolRadio) return;
+
+        const cngAllowed = vehRadio.value === 'Car';
+        cngRadio.disabled = !cngAllowed;
+        if (cngOption) cngOption.classList.toggle('cursor-pointer', cngAllowed);
+
+        if (!cngAllowed && cngRadio.checked) {
+            petrolRadio.checked = true;
+            if (resetPrice) priceInput.value = '102';
+        }
+        priceUnitLabel.textContent = petrolRadio.checked ? '₹/L' : '₹/kg';
+    }
+
+    // Trip distance is always "how far the PREVIOUS tank took you". On the very
+    // first fill of a vehicle+fuel combo there is no previous tank, so the field
+    // has nothing to measure — lock it at 0 rather than ask for a number the
+    // chain calculation ignores anyway.
+    function setTripLocked(locked) {
+        kmInput.disabled = locked;
+        kmInput.required = !locked;
+        kmInput.classList.toggle('opacity-50', locked);
+        if (locked) kmInput.value = '0';
+        if (kmHint) kmHint.classList.toggle('hidden', !locked);
+        if (kmLabel) kmLabel.textContent = locked
+            ? 'Trip Distance (first fill — none yet)'
+            : 'Trip Distance (since last fuel)';
     }
 
     // ═══════════════════════════════════════════════════════
@@ -460,6 +503,8 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                 }
             }
         }
+
+        setTripLocked(!prevEntry);
 
         if (prevEntry) {
             prevBox.classList.remove('hidden');
@@ -604,8 +649,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         spentInput.value = entry.spent;
         dateInput.value  = entry.date;
 
-        const isPetrol = entry.fuelType === 'Petrol';
-        priceUnitLabel.textContent = isPetrol ? '₹/L' : '₹/kg';
+        syncFuelTypeForVehicle({ resetPrice: false });
 
         formHeadingText.textContent = 'Edit Entry';
         formIconEl.textContent = 'edit';
@@ -637,7 +681,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         if (carRadio) carRadio.checked = true;
 
         priceInput.value = '83';
-        priceUnitLabel.textContent = '₹/kg';
+        syncFuelTypeForVehicle({ resetPrice: false });
 
         formHeadingText.textContent = 'Log Fuel Entry';
         formIconEl.textContent = 'add_circle';
@@ -667,6 +711,9 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         updateStats();
         renderHistory();
         updateDataPage();
+        // Entries drive the trip-distance lock, so refresh the form preview
+        // whenever the data set changes (initial load, sync, delete).
+        calculateLive();
     }
 
     function updateStats() {
