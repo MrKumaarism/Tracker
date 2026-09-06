@@ -324,3 +324,7 @@ button:focus-visible, a:focus-visible {
     .lg\:pl-64 { padding-left: 0 !important; }
     main { padding: 0 !important; }
 }
+
+/* History monthly summary: hide the native disclosure triangle */
+#history-summary summary::-webkit-details-marker { display: none; }
+#history-summary summary { list-style: none; }

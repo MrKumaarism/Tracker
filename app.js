@@ -86,6 +86,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
     // History
     const historyList      = $('#history-list');
+    const historySummary   = $('#history-summary');
     const historyEmpty     = $('#history-empty-state');
     const historySearch    = $('#historySearch');
     const historyFilters   = $('#historyFilters');
@@ -746,6 +747,157 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         if (barMonth) barMonth.style.width    = `${Math.min((monthSpent / 10000) * 100, 100)}%`;
     }
 
+    // ═══════════════════════════════════════════════════════
+    //  MONTHLY SUMMARY (History page)
+    // ═══════════════════════════════════════════════════════
+    // A tank's distance is only known once the NEXT fill is logged, so it is
+    // credited to the month the tank was bought — not the month it was driven
+    // out. Pending (latest) fills therefore contribute spend but no distance.
+    function buildMonthlySummary(list) {
+        const months = new Map();
+
+        list.forEach(e => {
+            const key = (e.date || '').slice(0, 7);
+            if (!key) return;
+
+            if (!months.has(key)) {
+                months.set(key, {
+                    key, spent: 0, entries: 0, pending: 0,
+                    km: 0, spentCompleted: 0, groups: new Map(),
+                });
+            }
+            const m = months.get(key);
+
+            const gKey = e.vehicleType + '|' + e.fuelType;
+            if (!m.groups.has(gKey)) {
+                m.groups.set(gKey, {
+                    vehicleType: e.vehicleType, fuelType: e.fuelType,
+                    spent: 0, qty: 0, km: 0, qtyCompleted: 0,
+                    spentCompleted: 0, entries: 0, pending: 0,
+                });
+            }
+            const g = m.groups.get(gKey);
+
+            const done  = e.status === 'completed';
+            const spent = e.spent || 0;
+            const qty   = e.qty || 0;
+            const km    = done ? (e.distanceDriven || 0) : 0;
+
+            m.spent += spent; m.entries++; m.km += km;
+            g.spent += spent; g.qty += qty; g.entries++; g.km += km;
+
+            if (done) {
+                m.spentCompleted += spent;
+                g.spentCompleted += spent;
+                g.qtyCompleted   += qty;
+            } else {
+                m.pending++;
+                g.pending++;
+            }
+        });
+
+        return [...months.values()].sort((a, b) => b.key.localeCompare(a.key));
+    }
+
+    function monthLabel(key) {
+        const [y, mo] = key.split('-');
+        const d = new Date(Number(y), Number(mo) - 1, 1);
+        return d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+    }
+
+    function esc(str) {
+        return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        })[c]);
+    }
+
+    function statTile(label, value, sub) {
+        return `<div class="flex flex-col gap-[2px] px-md py-sm bg-surface-container rounded-lg min-w-0">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant truncate">${esc(label)}</span>
+            <span class="text-lg font-bold text-on-surface truncate">${value}</span>
+            ${sub ? `<span class="text-[11px] text-on-surface-variant truncate">${sub}</span>` : ''}
+        </div>`;
+    }
+
+    function summaryRow(g) {
+        const unit    = g.fuelType === 'CNG' ? 'kg' : 'L';
+        const mileage = g.qtyCompleted > 0 && g.km > 0
+            ? `${(g.km / g.qtyCompleted).toFixed(2)} km/${unit}`
+            : '—';
+        const costKm  = g.km > 0 ? `₹${(g.spentCompleted / g.km).toFixed(2)}` : '—';
+
+        return `<tr class="border-t border-outline-variant/30">
+            <td class="py-sm pr-md whitespace-nowrap font-semibold text-on-surface">
+                ${VEHICLE_EMOJI[g.vehicleType] || '🚗'} ${esc(g.vehicleType)}
+                <span class="text-on-surface-variant font-normal">· ${esc(g.fuelType)}</span>
+            </td>
+            <td class="py-sm px-sm text-right whitespace-nowrap">${g.km > 0 ? formatNumber(g.km) : '—'}</td>
+            <td class="py-sm px-sm text-right whitespace-nowrap">₹${formatNumber(g.spent)}</td>
+            <td class="py-sm px-sm text-right whitespace-nowrap">${formatNumber(g.qty)} ${unit}</td>
+            <td class="py-sm px-sm text-right whitespace-nowrap font-semibold text-primary">${mileage}</td>
+            <td class="py-sm pl-sm text-right whitespace-nowrap">${costKm}</td>
+        </tr>`;
+    }
+
+    function renderMonthlySummary(list) {
+        if (!historySummary) return;
+
+        const months = buildMonthlySummary(list);
+        if (months.length === 0) {
+            historySummary.classList.add('hidden');
+            historySummary.classList.remove('flex');
+            historySummary.innerHTML = '';
+            return;
+        }
+
+        historySummary.classList.remove('hidden');
+        historySummary.classList.add('flex');
+
+        historySummary.innerHTML = months.map((m, i) => {
+            const costKm = m.km > 0 ? `₹${(m.spentCompleted / m.km).toFixed(2)}` : '—';
+            const rows   = [...m.groups.values()]
+                .sort((a, b) => b.spent - a.spent)
+                .map(summaryRow).join('');
+
+            return `<details class="bg-surface-container-low border border-outline-variant/40 rounded-xl overflow-hidden" ${i === 0 ? 'open' : ''}>
+                <summary class="cursor-pointer list-none px-md py-md flex items-center justify-between gap-md hover:bg-surface-container transition-colors">
+                    <span class="flex items-center gap-sm min-w-0">
+                        <span class="material-symbols-outlined text-[20px] text-primary">calendar_month</span>
+                        <span class="font-bold text-on-surface truncate">${esc(monthLabel(m.key))}</span>
+                        <span class="text-xs text-on-surface-variant whitespace-nowrap">${m.entries} fill${m.entries === 1 ? '' : 's'}${m.pending ? ' · ' + m.pending + ' pending' : ''}</span>
+                    </span>
+                    <span class="text-sm font-bold text-primary whitespace-nowrap">₹${formatNumber(m.spent)}</span>
+                </summary>
+                <div class="px-md pb-md flex flex-col gap-md">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-sm">
+                        ${statTile('Spent', '₹' + formatNumber(m.spent), m.pending ? m.pending + ' tank(s) still running' : 'all tanks measured')}
+                        ${statTile('Distance', formatNumber(m.km) + ' km', 'from measured tanks')}
+                        ${statTile('Running cost', costKm, 'per km')}
+                        ${statTile('Fills', String(m.entries), m.groups.size + ' vehicle/fuel combo' + (m.groups.size === 1 ? '' : 's'))}
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-on-surface-variant">
+                            <thead>
+                                <tr class="text-[10px] uppercase tracking-wider text-on-surface-variant/70">
+                                    <th class="text-left font-bold pb-xs">Vehicle · Fuel</th>
+                                    <th class="text-right font-bold pb-xs px-sm">Km</th>
+                                    <th class="text-right font-bold pb-xs px-sm">Spent</th>
+                                    <th class="text-right font-bold pb-xs px-sm">Fuel</th>
+                                    <th class="text-right font-bold pb-xs px-sm">Avg</th>
+                                    <th class="text-right font-bold pb-xs pl-sm">₹/km</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                    <p class="text-[11px] text-on-surface-variant/80 leading-snug">
+                        Distance and mileage come from tanks bought this month that a later fill has already measured. The newest tank of each vehicle stays pending until you log the next one.
+                    </p>
+                </div>
+            </details>`;
+        }).join('');
+    }
+
     function renderHistory() {
         const searchTerm = historySearch ? historySearch.value.toLowerCase().trim() : '';
 
@@ -774,6 +926,8 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             const dc = b.date.localeCompare(a.date);
             return dc !== 0 ? dc : b.createdAt - a.createdAt;
         });
+
+        renderMonthlySummary(filtered);
 
         // Show/hide states
         if (filtered.length === 0) {
