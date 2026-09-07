@@ -84,6 +84,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     const statOverallAvg    = $('#stat-overall-avg');
     const statAvgUnit       = $('#stat-avg-unit');
     const statMonthSpent    = $('#stat-month-spent');
+    const monthPulse        = $('#monthPulse');
     const totalLogsCounter  = $('#total-logs-counter');
     const dataEntryCount    = $('#data-entry-count');
     const dataStorageType   = $('#data-storage-type');
@@ -752,6 +753,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     }
 
     function updateStats() {
+        renderMonthPulse();
         const completedEntries = entries.filter(e => e.status === 'completed');
         
         const totalKm    = completedEntries.reduce((s, e) => s + (e.distanceDriven || 0), 0);
@@ -779,6 +781,91 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         if (barEntries) barEntries.style.width  = `${Math.min((entries.length / 100) * 100, 100)}%`;
         if (barAvg) barAvg.style.width      = overallAvg !== '—' ? `${Math.min((parseFloat(overallAvg) / 50) * 100, 100)}%` : '0%';
         if (barMonth) barMonth.style.width    = `${Math.min((monthSpent / 10000) * 100, 100)}%`;
+    }
+
+
+    // ═══════════════════════════════════════════════════════
+    //  THIS MONTH (Dashboard)
+    // ═══════════════════════════════════════════════════════
+    // The lifetime cards answer "what has this cost me ever". They never move
+    // enough to be worth a glance. This band answers "how is the month going",
+    // reusing the History summary so both pages can never disagree.
+    function renderMonthPulse() {
+        if (!monthPulse) return;
+
+        const now   = new Date();
+        const key   = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const label = monthLabel(key);
+        const months = buildMonthlySummary(entries);
+        const m    = months.find(x => x.key === key);
+        // months are newest-first, so the first older key is the previous month
+        // that actually has fills — skipping empty months is the honest compare.
+        const prev = months.find(x => x.key < key);
+
+        const head = `<div class="flex items-center justify-between gap-md z-10">
+            <h2 class="text-[11px] font-bold text-on-surface-variant uppercase tracking-widest">This Month · ${esc(label)}</h2>
+            <span class="material-symbols-outlined text-outline-variant text-[20px]">calendar_month</span>
+        </div>`;
+
+        if (!m) {
+            monthPulse.innerHTML = `${head}
+                <p class="text-sm text-on-surface-variant z-10">No fills logged yet this month.${prev ? ` You spent <b class="text-error">₹${formatNumber(prev.spent)}</b> in ${esc(monthLabel(prev.key))}.` : ''}</p>`;
+            return;
+        }
+
+        const costKm = monthCostPerKm(m);
+        const est    = m.spentPending > 0 ? monthEstKm(m) : null;
+
+        const metric = (value, cls, unit, caption) => `<div class="flex flex-col gap-[2px]">
+            <span class="flex items-baseline gap-xs">
+                <span class="text-2xl font-bold tracking-tight ${cls}">${value}</span>
+                ${unit ? `<span class="text-xs font-semibold text-on-surface-variant">${unit}</span>` : ''}
+            </span>
+            <span class="text-[10px] uppercase tracking-wider text-on-surface-variant/70">${caption}</span>
+        </div>`;
+
+        const metrics = [
+            metric(`₹${formatNumber(m.spent)}`, 'text-error', '', 'spent'),
+            metric(formatNumber(m.km), 'text-success', 'km', 'measured'),
+            metric(costKm !== null ? `₹${costKm.toFixed(2)}` : '—', 'text-error', '/km', 'running cost'),
+            metric(String(m.entries), 'text-on-surface', m.entries === 1 ? 'fill' : 'fills', 'logged'),
+        ].join('');
+
+        const notes = [];
+        if (m.spentPending > 0) {
+            notes.push(`<span class="text-tertiary">₹${formatNumber(m.spentPending)} still in the tank${est !== null ? ` ≈ ${formatNumber(Math.round(est))} km not counted yet` : ' — distance not counted yet'}</span>`);
+        }
+        if (m.spentSupport > 0) {
+            notes.push(`<span class="text-on-surface-variant/80">₹${formatNumber(m.spentSupport)} backup petrol — cost only</span>`);
+        }
+        if (prev) {
+            const pct = prev.spent > 0 ? ((m.spent - prev.spent) / prev.spent) * 100 : null;
+            if (pct !== null && Math.abs(pct) >= 1) {
+                const up = pct > 0;
+                notes.push(`<span class="${up ? 'text-error' : 'text-success'}">spend ${up ? 'up' : 'down'} ${Math.abs(pct).toFixed(0)}% vs ${esc(monthLabel(prev.key))}</span>`);
+            }
+        }
+
+        const chips = [...m.groups.values()].sort((a, b) => b.spent - a.spent).map(g => {
+            const unit = g.fuelType === 'CNG' ? 'kg' : 'L';
+            const mil  = groupMileage(g);
+            const tail = g.support
+                ? '<span class="text-on-surface-variant/80">backup only</span>'
+                : (mil !== null ? `<span class="text-success font-semibold">${mil.toFixed(1)} km/${unit}</span>` : '<span class="text-tertiary">no avg yet</span>');
+            return `<span class="flex items-center gap-xs px-sm py-[3px] rounded-full border border-outline-variant bg-surface-container-lowest text-[11px] whitespace-nowrap">
+                <span>${VEHICLE_EMOJI[g.vehicleType] || '🚗'}</span>
+                <span class="text-on-surface font-semibold">${esc(g.vehicleType)}</span>
+                <span class="text-on-surface-variant/70">·</span>
+                <span class="text-error font-semibold">₹${formatNumber(g.spent)}</span>
+                <span class="text-on-surface-variant/70">·</span>
+                ${tail}
+            </span>`;
+        }).join('');
+
+        monthPulse.innerHTML = `${head}
+            <div class="flex flex-wrap items-end gap-x-xl gap-y-md z-10">${metrics}</div>
+            ${notes.length ? `<div class="flex flex-wrap gap-x-md gap-y-xs text-[11px] z-10">${notes.join('')}</div>` : ''}
+            ${chips ? `<div class="flex flex-wrap gap-xs z-10 pt-xs border-t border-dashed border-outline-variant">${chips}</div>` : ''}`;
     }
 
     // ═══════════════════════════════════════════════════════
@@ -895,7 +982,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                     ${VEHICLE_EMOJI[g.vehicleType] || '🚗'} ${esc(g.vehicleType)}
                     <span class="text-on-surface-variant font-normal">· ${esc(g.fuelType)}</span>
                 </td>
-                <td class="py-sm px-sm text-right whitespace-nowrap">₹${formatNumber(g.spent)}</td>
+                <td class="py-sm px-sm text-right whitespace-nowrap font-semibold text-error">₹${formatNumber(g.spent)}</td>
                 <td class="py-sm px-sm text-right whitespace-nowrap">${formatNumber(g.qty)} ${unit}</td>
                 <td class="py-sm px-sm text-left text-[11px] italic text-on-surface-variant/80" colspan="4">Backup &amp; startup fuel — cost only, no mileage</td>
             </tr>`;
@@ -904,7 +991,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         const costKm  = groupCostPerKm(g) !== null ? `₹${groupCostPerKm(g).toFixed(2)}` : '—';
         const estKm   = groupEstKm(g);
         const inTank  = g.spentPending > 0
-            ? `₹${formatNumber(g.spentPending)}${estKm !== null ? ` <span class="text-on-surface-variant/70">≈${Math.round(estKm)} km</span>` : ''}`
+            ? `₹${formatNumber(g.spentPending)}${estKm !== null ? ` <span class="text-tertiary/70">≈${Math.round(estKm)} km</span>` : ''}`
             : '—';
 
         return `<tr class="border-t border-outline-variant/30">
@@ -912,12 +999,12 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                 ${VEHICLE_EMOJI[g.vehicleType] || '🚗'} ${esc(g.vehicleType)}
                 <span class="text-on-surface-variant font-normal">· ${esc(g.fuelType)}</span>
             </td>
-            <td class="py-sm px-sm text-right whitespace-nowrap">₹${formatNumber(g.spent)}</td>
+            <td class="py-sm px-sm text-right whitespace-nowrap font-semibold text-error">₹${formatNumber(g.spent)}</td>
             <td class="py-sm px-sm text-right whitespace-nowrap">${formatNumber(g.qty)} ${unit}</td>
-            <td class="py-sm px-sm text-right whitespace-nowrap">${g.km > 0 ? formatNumber(g.km) : '—'}</td>
-            <td class="py-sm px-sm text-right whitespace-nowrap font-semibold text-primary">${mileage}</td>
-            <td class="py-sm px-sm text-right whitespace-nowrap">${costKm}</td>
-            <td class="py-sm pl-sm text-right whitespace-nowrap">${inTank}</td>
+            <td class="py-sm px-sm text-right whitespace-nowrap font-semibold text-success">${g.km > 0 ? formatNumber(g.km) : '—'}</td>
+            <td class="py-sm px-sm text-right whitespace-nowrap font-semibold text-success">${mileage}</td>
+            <td class="py-sm px-sm text-right whitespace-nowrap text-error">${costKm}</td>
+            <td class="py-sm pl-sm text-right whitespace-nowrap text-tertiary">${inTank}</td>
         </tr>`;
     }
 
@@ -940,29 +1027,29 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         const costKm = monthCostPerKm(m);
 
         if (m.km > 0) {
-            lines.push(`Of the <b>₹${formatNumber(m.spent)}</b> spent, <b>₹${formatNumber(m.spentCompleted)}</b> has been measured over <b>${formatNumber(m.km)} km</b> — <b>₹${costKm.toFixed(2)} per km</b>.`);
+            lines.push(`Of the <b class="text-error">₹${formatNumber(m.spent)}</b> spent, <b class="text-error">₹${formatNumber(m.spentCompleted)}</b> has been measured over <b class="text-success">${formatNumber(m.km)} km</b> — <b class="text-error">₹${costKm.toFixed(2)} per km</b>.`);
         }
 
         if (m.spentSupport > 0) {
-            lines.push(`<b>₹${formatNumber(m.spentSupport)}</b> went into the car's petrol for starting and backup. It counts in the spend and stays out of every mileage figure, because CNG does the driving.`);
+            lines.push(`<b class="text-error">₹${formatNumber(m.spentSupport)}</b> went into the car's petrol for starting and backup. It counts in the spend and stays out of every mileage figure, because CNG does the driving.`);
         }
 
         if (m.spentPending > 0) {
             const est = monthEstKm(m);
             lines.push(est !== null
-                ? `<b>₹${formatNumber(m.spentPending)}</b> is still in the tank. At your usual mileage that is about <b>${formatNumber(Math.round(est))} km</b> not counted yet, so the month is closer to <b>~${formatNumber(Math.round(m.km + est))} km</b>.`
-                : `<b>₹${formatNumber(m.spentPending)}</b> is still in the tank and has no mileage history yet, so its distance is missing from this month.`);
+                ? `<b class="text-error">₹${formatNumber(m.spentPending)}</b> is still in the tank. At your usual mileage that is about <b class="text-tertiary">${formatNumber(Math.round(est))} km</b> not counted yet, so the month is closer to <b class="text-tertiary">~${formatNumber(Math.round(m.km + est))} km</b>.`
+                : `<b class="text-error">₹${formatNumber(m.spentPending)}</b> is still in the tank and has no mileage history yet, so its distance is missing from this month.`);
         }
 
         const measured = [...m.groups.values()].filter(g => groupMileage(g) !== null);
         if (measured.length > 0) {
             const best = measured.reduce((a, b) => (groupMileage(b) > groupMileage(a) ? b : a));
             const unit = best.fuelType === 'CNG' ? 'km/kg' : 'km/L';
-            lines.push(`${VEHICLE_EMOJI[best.vehicleType] || '🚗'} <b>${esc(best.vehicleType)} · ${esc(best.fuelType)}</b> gave the best mileage: <b>${groupMileage(best).toFixed(2)} ${unit}</b> at ₹${groupCostPerKm(best).toFixed(2)}/km.`);
+            lines.push(`${VEHICLE_EMOJI[best.vehicleType] || '🚗'} <b>${esc(best.vehicleType)} · ${esc(best.fuelType)}</b> gave the best mileage: <b class="text-success">${groupMileage(best).toFixed(2)} ${unit}</b> at <b class="text-error">₹${groupCostPerKm(best).toFixed(2)}/km</b>.`);
 
             if (measured.length > 1) {
                 const dear = measured.reduce((a, b) => (groupCostPerKm(b) > groupCostPerKm(a) ? b : a));
-                lines.push(`Costliest to run was ${VEHICLE_EMOJI[dear.vehicleType] || '🚗'} <b>${esc(dear.vehicleType)} · ${esc(dear.fuelType)}</b> at <b>₹${groupCostPerKm(dear).toFixed(2)}/km</b>.`);
+                lines.push(`Costliest to run was ${VEHICLE_EMOJI[dear.vehicleType] || '🚗'} <b>${esc(dear.vehicleType)} · ${esc(dear.fuelType)}</b> at <b class="text-error">₹${groupCostPerKm(dear).toFixed(2)}/km</b>.`);
             }
         }
 
@@ -997,11 +1084,11 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                         <span class="material-symbols-outlined text-[20px] text-primary month-chevron">expand_more</span>
                         <span class="font-bold text-on-surface truncate">${esc(monthLabel(m.key))}</span>
                     </span>
-                    <span class="text-base font-bold text-primary whitespace-nowrap">₹${formatNumber(m.spent)} spent</span>
+                    <span class="text-base font-bold text-error whitespace-nowrap">₹${formatNumber(m.spent)} spent</span>
                 </span>
                 <span class="flex flex-wrap items-center gap-x-md gap-y-xs text-xs text-on-surface-variant pl-[28px]">
-                    <span><b class="text-on-surface">${formatNumber(m.km)}</b> km measured</span>
-                    <span><b class="text-on-surface">${costKm !== null ? '₹' + costKm.toFixed(2) : '—'}</b> /km</span>
+                    <span><b class="text-success">${formatNumber(m.km)}</b> km measured</span>
+                    <span><b class="text-error">${costKm !== null ? '₹' + costKm.toFixed(2) : '—'}</b> /km</span>
                     <span><b class="text-on-surface">${m.entries}</b> fill${m.entries === 1 ? '' : 's'}</span>
                 </span>
                 ${m.spentSupport > 0 ? `<span class="text-[11px] text-on-surface-variant/80 pl-[28px] leading-snug">

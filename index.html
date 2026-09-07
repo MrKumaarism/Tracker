@@ -49,6 +49,11 @@
                     "on-error": "#f8f6f1",
                     "error-container": "#f4b8c5",
 
+                    /* Scan colours: red = money out, green = distance/mileage,
+                       amber = fuel bought but not yet measured */
+                    success: "#2f7d5f",
+                    tertiary: "#a9701c",
+
                     "inverse-surface": "#1a1a1a",
                     "inverse-on-surface": "#f8f6f1",
 
@@ -192,7 +197,11 @@
                     <h1 class="text-2xl font-semibold tracking-tight text-on-surface">Dashboard</h1>
                 </div>
 
-                <!-- Stats Grid -->
+                <!-- This month at a glance. The full breakdown lives in History;
+                     this is the scan you get without leaving the home page. -->
+                <section class="order-1 ticket-card p-lg flex flex-col gap-md w-full" id="monthPulse"></section>
+
+                <!-- Lifetime totals -->
                 <div class="order-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-md w-full" id="statsGrid">
                     <div class="ticket-card p-lg flex flex-col gap-sm">
                         <div class="flex items-center justify-between z-10">
@@ -206,8 +215,8 @@
                     </div>
                     <div class="ticket-card p-lg flex flex-col gap-sm">
                         <div class="flex items-center justify-between z-10">
-                            <h2 class="text-[11px] font-bold text-on-surface-variant uppercase tracking-widest">Border Crossings</h2>
-                            <span class="material-symbols-outlined text-outline-variant text-[20px]">luggage</span>
+                            <h2 class="text-[11px] font-bold text-on-surface-variant uppercase tracking-widest">Fills Logged</h2>
+                            <span class="material-symbols-outlined text-outline-variant text-[20px]">local_gas_station</span>
                         </div>
                         <div class="flex items-baseline gap-xs z-10 mt-1">
                             <span class="text-3xl font-bold text-on-surface tracking-tight" id="stat-total-entries">0</span>
