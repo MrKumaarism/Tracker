@@ -728,7 +728,13 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
     // ─── Delete ───
     async function deleteEntry(id) {
-        showConfirm('Delete this fuel entry?', async () => {
+        // Name the entry in the prompt. A bare "this fuel entry" reads the same
+        // whichever card you tapped, and the delete cannot be undone.
+        const target = entries.find(en => en.id === id);
+        const what = target
+            ? `Delete the ₹${formatNumber(target.spent)} ${target.fuelType} fill for the ${target.vehicleType} on ${formatDatePretty(target.date)}? This cannot be undone.`
+            : 'Delete this fuel entry? This cannot be undone.';
+        showConfirm(what, async () => {
             if (editingId === id) resetForm();
             entries = entries.filter(en => en.id !== id);
             if (currentUser) {
