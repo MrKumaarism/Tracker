@@ -1,6 +1,6 @@
 import { initializeApp } from "./vendor/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "./vendor/firebase-auth.js";
-import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, writeBatch, enableIndexedDbPersistence } from "./vendor/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, deleteDoc, onSnapshot, writeBatch } from "./vendor/firebase-firestore.js";
 
 // ponytail: config duplicated from app.js on purpose — fuel tracker stays untouched.
 const firebaseConfig = {
@@ -15,10 +15,13 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const dbFirestore = getFirestore(app);
-
-enableIndexedDbPersistence(dbFirestore).catch((err) => {
-    console.warn("Firestore offline persistence error:", err);
+// Offline storage. enableIndexedDbPersistence() was the old API and it fails
+// with "failed-precondition" the moment a second tab is open, leaving that tab
+// with no offline cache at all — silently, because the rejection was only
+// warned about. persistentLocalCache with the multi-tab manager is the
+// supported replacement and shares one IndexedDB cache across every open tab.
+const dbFirestore = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 });
 
 /* ═══════════════════════════════════════════════════════
@@ -214,6 +217,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     //  INIT
     // ═══════════════════════════════════════════════════════
     function init() {
+        initOfflineBadge();
         readStateFromUrl();
         attachSuggest(storeInput, SUGGEST.store);
         addItemRow();
@@ -607,12 +611,8 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                     // deleted from another device can come back here. That is a
                     // visible, re-deletable annoyance; losing an offline entry is
                     // not. Needs a tombstone list to do better.
-                    persistAll(orphans)
-                        .then(() => showToast(`Synced ${orphans.length} offline ${orphans.length === 1 ? 'entry' : 'entries'} to your account`))
-                        .catch((err) => {
-                            console.error('Offline sync failed:', err);
-                            showToast('Could not sync offline entries — they are still on this device');
-                        });
+                    persistAll(orphans).catch(err => console.error('Offline sync failed:', err));
+                    showToast(`Syncing ${orphans.length} offline ${orphans.length === 1 ? 'entry' : 'entries'} to your account`);
                 }
             }
 
@@ -654,26 +654,31 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
     /** Write a batch of entries in one shot. */
     async function persistAll(entries) {
-        if (currentUser) {
-            const batch = writeBatch(dbFirestore);
-            for (const entry of entries) batch.set(doc(purchasesRef(), entry.id), entry);
-            await batch.commit();
-            return;
-        }
+        // Local first, unconditionally. The row is on screen and on this device
+        // before the network is consulted at all.
         const ids = new Set(entries.map(e => e.id));
         purchases = [...purchases.filter(p => !ids.has(p.id)), ...entries];
         saveToLocalStorage();
         render();
+
+        if (!currentUser) return;
+
+        const batch = writeBatch(dbFirestore);
+        for (const entry of entries) batch.set(doc(purchasesRef(), entry.id), entry);
+        // Deliberately not awaited. Offline, commit() stays pending until the
+        // server answers, which left the Save button stuck on "Saving..." and
+        // the form locked. Firestore has already persisted the mutation to
+        // IndexedDB and flushes it on reconnect.
+        batch.commit().catch(err => console.error('Sync failed:', err));
     }
 
     async function removeEntry(id) {
-        if (currentUser) {
-            await deleteDoc(doc(purchasesRef(), id));
-            return;
-        }
         purchases = purchases.filter(p => p.id !== id);
         saveToLocalStorage();
         render();
+
+        if (!currentUser) return;
+        deleteDoc(doc(purchasesRef(), id)).catch(err => console.error('Delete sync failed:', err));
     }
 
     // ═══════════════════════════════════════════════════════
@@ -1188,6 +1193,26 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         console.assert(slug('  Amul  Milk!! ') === 'amul-milk', 'slug normalisation wrong');
         console.assert(normaliseLabel('  dry   fruits ') === 'Dry Fruits', 'label normalisation wrong');
         console.log('inventory self-check done');
+    }
+
+        // ─── Offline indicator ───
+    // Writes now succeed offline and sync later, which is only reassuring if
+    // you can tell that is what is happening. navigator.onLine is a coarse
+    // signal (it means "has a network", not "can reach Firestore"), so this
+    // stays a quiet badge rather than anything that blocks saving.
+    function initOfflineBadge() {
+        const badge = document.createElement('div');
+        badge.className = 'offline-badge';
+        badge.innerHTML = '<span class="material-symbols-outlined text-[16px]">cloud_off</span><span>Offline — saved here, will sync</span>';
+        document.body.appendChild(badge);
+
+        const paint = () => badge.classList.toggle('is-visible', !navigator.onLine);
+        window.addEventListener('online', () => {
+            paint();
+            showToast('Back online — syncing');
+        });
+        window.addEventListener('offline', paint);
+        paint();
     }
 
     init();

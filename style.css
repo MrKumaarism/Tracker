@@ -375,3 +375,37 @@ button:focus-visible, a:focus-visible {
 .suggest-item:hover {
     background: #98d4bb;
 }
+
+
+/* ═══════ Offline badge ═══════ */
+.offline-badge {
+    position: fixed;
+    left: 50%;
+    bottom: 84px;
+    transform: translate(-50%, 12px);
+    z-index: 60;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 9999px;
+    background: #1a1a1a;
+    color: #f8f6f1;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow: 0 6px 20px rgba(26, 26, 26, 0.3);
+    opacity: 0;
+    transition: opacity 200ms ease, transform 200ms ease;
+    pointer-events: none;
+}
+
+.offline-badge.is-visible {
+    display: flex;
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+@media (min-width: 1024px) {
+    .offline-badge { bottom: 24px; }
+}

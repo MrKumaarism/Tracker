@@ -1,6 +1,6 @@
 import { initializeApp } from "./vendor/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "./vendor/firebase-auth.js";
-import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, enableIndexedDbPersistence } from "./vendor/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, deleteDoc, onSnapshot } from "./vendor/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDDI6XzGK9BMwpD6U9e1SMk8QiH9INyo6w",
@@ -14,7 +14,14 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const dbFirestore = getFirestore(app);
+// Offline storage. enableIndexedDbPersistence() was the old API and it fails
+// with "failed-precondition" the moment a second tab is open, leaving that tab
+// with no offline cache at all — silently, because the rejection was only
+// warned about. persistentLocalCache with the multi-tab manager is the
+// supported replacement and shares one IndexedDB cache across every open tab.
+const dbFirestore = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+});
 
 // Badge icon per vehicle type. Falls back to the car emoji for anything older
 // than this list, e.g. rows imported from a CSV with a type no longer offered.
@@ -28,10 +35,6 @@ const VEHICLE_EMOJI = { Car: '🚗', Bike: '🏍️', Scooty: '🛵' };
 function isSupportFuel(vehicleType, fuelType) {
     return vehicleType === 'Car' && fuelType === 'Petrol';
 }
-
-enableIndexedDbPersistence(dbFirestore).catch((err) => {
-    console.warn("Firestore offline persistence error:", err);
-});
 
 /* ═══════════════════════════════════════════════════════
    Fuel Tracker — Application Logic
@@ -126,6 +129,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     //  INIT
     // ═══════════════════════════════════════════════════════
     async function init() {
+        initOfflineBadge();
         setDefaultDate();
         bindEvents();
         initNavigation();
@@ -229,11 +233,31 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         
         if (unsubscribeSnapshot) unsubscribeSnapshot();
         
+        // Entries logged while signed out live only on this device, and the
+        // first snapshot replaces `entries` wholesale. Upload them once before
+        // that happens or signing in silently destroys them.
+        let uploadedOrphans = false;
+
         unsubscribeSnapshot = onSnapshot(entriesRef, (snapshot) => {
             const serverEntries = [];
             snapshot.forEach((doc) => {
                 serverEntries.push(doc.data());
             });
+
+            if (!uploadedOrphans) {
+                uploadedOrphans = true;
+                const onServer = new Set(serverEntries.map(e => e.id));
+                const orphans = loadFromLocalStorage().filter(e => e.id && !onServer.has(e.id));
+                if (orphans.length) {
+                    // ponytail: "absent from the server" is the whole test, so a
+                    // row deleted on another device can come back. Visible and
+                    // re-deletable; losing an offline entry is not. A tombstone
+                    // list is the upgrade if this ever bites.
+                    orphans.forEach(e => putEntryFirestore(e).catch(err => console.error('Sync failed:', err)));
+                    showToast(`Syncing ${orphans.length} offline ${orphans.length === 1 ? 'entry' : 'entries'} to your account`);
+                }
+            }
+
             entries = serverEntries;
             saveToLocalStorage(); // Backup
             migrateEntries();
@@ -329,12 +353,20 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     
     async function recalculateAndSyncChains() {
         recalculateChainsLocal();
-        if (currentUser) {
-            for (const entry of entries) {
-                try { await putEntryFirestore(entry); } catch(e) {}
-            }
-        }
+        // Local first, unconditionally. Whatever happens to the network, the
+        // entry is on this device before the function returns.
         saveToLocalStorage();
+
+        if (!currentUser) return;
+
+        // Deliberately not awaited. Offline, setDoc()'s promise stays pending
+        // until the server acknowledges — awaiting it here froze the form on
+        // "Saving..." forever. Firestore has already written the mutation to
+        // IndexedDB by the time setDoc() returns and flushes it on reconnect,
+        // so the write is durable without the wait.
+        for (const entry of entries) {
+            putEntryFirestore(entry).catch(err => console.error('Sync failed:', err));
+        }
     }
 
     // ═══════════════════════════════════════════════════════
@@ -737,8 +769,10 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         showConfirm(what, async () => {
             if (editingId === id) resetForm();
             entries = entries.filter(en => en.id !== id);
+            // Not awaited, same reason as the write path: offline this never
+            // resolves, and the delete is already queued locally.
             if (currentUser) {
-                try { await deleteEntryFirestore(id); } catch(e) { console.error(e); }
+                deleteEntryFirestore(id).catch(err => console.error('Delete sync failed:', err));
             }
             await recalculateAndSyncChains();
             showToast('🗑️ Entry deleted');
@@ -1446,6 +1480,26 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
 
     // ─── Public API for inline events ───
     window.FuelApp = { edit: startEdit, delete: deleteEntry };
+
+    // ─── Offline indicator ───
+    // Writes now succeed offline and sync later, which is only reassuring if
+    // you can tell that is what is happening. navigator.onLine is a coarse
+    // signal (it means "has a network", not "can reach Firestore"), so this
+    // stays a quiet badge rather than anything that blocks saving.
+    function initOfflineBadge() {
+        const badge = document.createElement('div');
+        badge.className = 'offline-badge';
+        badge.innerHTML = '<span class="material-symbols-outlined text-[16px]">cloud_off</span><span>Offline — saved here, will sync</span>';
+        document.body.appendChild(badge);
+
+        const paint = () => badge.classList.toggle('is-visible', !navigator.onLine);
+        window.addEventListener('online', () => {
+            paint();
+            showToast('Back online — syncing');
+        });
+        window.addEventListener('offline', paint);
+        paint();
+    }
 
     // ─── Go ───
     init();
