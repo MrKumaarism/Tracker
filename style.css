@@ -366,9 +366,9 @@ button:focus-visible, a:focus-visible {
     line-height: 1.2;
     color: #1a1a1a;
     cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    /* Category and unit share a half-width grid column, so a long value like
+       "Personal Care" must wrap rather than get cut off. */
+    overflow-wrap: anywhere;
 }
 
 .suggest-item.active,
