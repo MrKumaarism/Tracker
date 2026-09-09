@@ -340,42 +340,80 @@ button:focus-visible, a:focus-visible {
    renders as a keyboard accessory bar rather than a list under the field, so
    past products and categories were effectively invisible on the phone this
    app is used on. This is the same idea, drawn by us in the same place on
-   every browser. */
+   every browser.
+
+   Styled as a quiet index slip, not a menu: hairline rules between rows, the
+   paper background of the form it sits on, and no fill on the active row —
+   just a mint marker in the gutter. It is a memory aid under the field you
+   are typing in, so it should never out-shout that field. */
 .suggest-list {
     position: absolute;
     top: 100%;
     left: 0;
     right: 0;
     z-index: 30;
-    margin-top: 2px;
-    max-height: 220px;
+    margin-top: 4px;
+    max-height: 208px;
     overflow-y: auto;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     list-style: none;
-    padding: 4px;
+    padding: 0;
     background: #fdfcf9;
-    border: 1px solid #1a1a1a;
+    border: 1px solid #d8d3c5;
     border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(26, 26, 26, 0.18);
+    box-shadow: 0 2px 10px rgba(26, 26, 26, 0.07);
 }
 
+/* Thin, unobtrusive scrollbar where the browser allows one. */
+.suggest-list { scrollbar-width: thin; scrollbar-color: #d8d3c5 transparent; }
+.suggest-list::-webkit-scrollbar { width: 6px; }
+.suggest-list::-webkit-scrollbar-thumb { background: #d8d3c5; border-radius: 3px; }
+.suggest-list::-webkit-scrollbar-track { background: transparent; }
+
 .suggest-item {
-    padding: 10px 12px;
-    border-radius: 6px;
-    font-size: 15px;
-    line-height: 1.2;
-    color: #1a1a1a;
+    position: relative;
+    padding: 9px 12px 9px 20px;
+    font-size: 14px;
+    line-height: 1.35;
+    color: #5a5a5a;
     cursor: pointer;
     /* Category and unit share a half-width grid column, so a long value like
        "Personal Care" must wrap rather than get cut off. */
     overflow-wrap: anywhere;
+    transition: color 120ms ease, background-color 120ms ease;
+}
+
+.suggest-item + .suggest-item {
+    border-top: 1px solid rgba(216, 211, 197, 0.5);
+}
+
+/* The marker sits in the left gutter and only gains colour when active, so
+   nothing shifts and the resting list stays flat. */
+.suggest-item::before {
+    content: "";
+    position: absolute;
+    left: 9px;
+    top: 50%;
+    width: 3px;
+    height: 3px;
+    margin-top: -1.5px;
+    border-radius: 50%;
+    background: #d8d3c5;
+    transition: background-color 120ms ease, transform 120ms ease;
 }
 
 .suggest-item.active,
 .suggest-item:hover {
-    background: #98d4bb;
+    background: #f5f3ed;
+    color: #1a1a1a;
 }
 
+.suggest-item.active::before,
+.suggest-item:hover::before {
+    background: #98d4bb;
+    transform: scale(2);
+}
 
 /* ═══════ Offline badge ═══════ */
 .offline-badge {
