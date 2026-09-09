@@ -482,9 +482,35 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         if (!currentUser) return;
         if (unsubscribeSnapshot) unsubscribeSnapshot();
 
+        // Rows typed while signed out live only on this device. The first
+        // snapshot replaces `purchases` wholesale, so upload them once before
+        // that happens or signing in silently destroys them.
+        let uploadedOrphans = false;
+
         unsubscribeSnapshot = onSnapshot(purchasesRef(), (snapshot) => {
             const rows = [];
             snapshot.forEach((d) => rows.push({ id: d.id, ...d.data() }));
+
+            if (!uploadedOrphans) {
+                uploadedOrphans = true;
+                const onServer = new Set(rows.map(r => r.id));
+                const orphans = loadFromLocalStorage().filter(p => p.id && !onServer.has(p.id));
+                if (orphans.length) {
+                    // Fire and forget: the write comes back as another snapshot,
+                    // which is what actually puts the rows on screen.
+                    // ponytail: "not on the server" is the whole test, so a row
+                    // deleted from another device can come back here. That is a
+                    // visible, re-deletable annoyance; losing an offline entry is
+                    // not. Needs a tombstone list to do better.
+                    persistAll(orphans)
+                        .then(() => showToast(`Synced ${orphans.length} offline ${orphans.length === 1 ? 'entry' : 'entries'} to your account`))
+                        .catch((err) => {
+                            console.error('Offline sync failed:', err);
+                            showToast('Could not sync offline entries — they are still on this device');
+                        });
+                }
+            }
+
             purchases = rows;
             // Mirror the server into localStorage on every snapshot. Saves used
             // to write to Firestore only, so the local copy held nothing but
