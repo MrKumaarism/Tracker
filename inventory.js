@@ -445,6 +445,9 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
                 if (unsubscribeSnapshot) unsubscribeSnapshot();
                 purchases = loadFromLocalStorage();
                 render();
+                // Signed out means this is the last synced copy on this device,
+                // not the account. Say so — silence here looks like lost data.
+                if (purchases.length) showToast('Signed out — showing the offline copy. Sign in to sync.');
             }
         });
     }
@@ -483,6 +486,11 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             const rows = [];
             snapshot.forEach((d) => rows.push({ id: d.id, ...d.data() }));
             purchases = rows;
+            // Mirror the server into localStorage on every snapshot. Saves used
+            // to write to Firestore only, so the local copy held nothing but
+            // whatever was typed while signed out — and a lapsed session then
+            // rendered that stale list, which read as vanished entries.
+            saveToLocalStorage();
             render();
         }, (err) => {
             console.error('Firestore listen failed:', err);
@@ -846,7 +854,9 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         dashEmpty.classList.toggle('hidden', visible.length > 0);
         dashEmpty.textContent = purchases.length
             ? 'No entries match this search or filter.'
-            : 'Nothing logged yet. Add an item on the Log tab.';
+            : (currentUser
+                ? 'Nothing logged yet. Add an item on the Log tab.'
+                : 'Nothing on this device. Sign in to load your saved items.');
 
         dashCount.textContent = visible.length
             ? `${visible.length} ${visible.length === 1 ? 'row' : 'rows'} · ${new Set(visible.map(e => e.productKey)).size} products`
