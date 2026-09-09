@@ -210,9 +210,8 @@
 
                     <label class="flex flex-col gap-xs min-w-0">
                         <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Store <span class="normal-case tracking-normal font-normal">(optional, applies to every item)</span></span>
-                        <input id="invStore" type="text" list="storeList" placeholder="DMart"
+                        <input id="invStore" type="text" placeholder="DMart" autocomplete="off"
                                class="w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
-                        <datalist id="storeList"></datalist>
                     </label>
 
                     <!-- Item rows -->
@@ -235,11 +234,6 @@
                     </div>
                 </form>
 
-                <!-- Shared suggestion lists, filled from past entries -->
-                <datalist id="productList"></datalist>
-                <datalist id="categoryList"></datalist>
-                <datalist id="unitList"></datalist>
-
                 <!-- One item row. Category and unit are free text with suggestions. -->
                 <template id="itemRowTemplate">
                     <div class="item-row bg-surface-container-low border border-outline-variant rounded p-md flex flex-col gap-sm">
@@ -252,8 +246,7 @@
 
                         <label class="flex flex-col gap-xs min-w-0">
                             <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Product</span>
-                            <input type="text" class="row-product w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary"
-                                   list="productList">
+                            <input type="text" autocomplete="off" class="row-product w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
                         </label>
 
                         <!-- Smart lookup: filled in when the typed product already exists -->
@@ -262,13 +255,11 @@
                         <div class="grid grid-cols-2 gap-xs sm:gap-sm">
                             <label class="flex flex-col gap-xs min-w-0">
                                 <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Category</span>
-                                <input type="text" class="row-category w-full bg-surface-container border border-outline-variant rounded px-sm sm:px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary"
-                                       list="categoryList" placeholder="Produce">
+                                <input type="text" autocomplete="off" placeholder="Produce" class="row-category w-full bg-surface-container border border-outline-variant rounded px-sm sm:px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
                             </label>
                             <label class="flex flex-col gap-xs min-w-0">
                                 <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Unit</span>
-                                <input type="text" class="row-unit w-full bg-surface-container border border-outline-variant rounded px-sm sm:px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary"
-                                       list="unitList" placeholder="100g">
+                                <input type="text" autocomplete="off" placeholder="100g" class="row-unit w-full bg-surface-container border border-outline-variant rounded px-sm sm:px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
                             </label>
                         </div>
 
@@ -276,6 +267,12 @@
                             <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Price ₹</span>
                             <input type="number" inputmode="decimal" step="any" min="0" placeholder="250"
                                    class="row-price w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
+                        </label>
+
+                        <label class="flex flex-col gap-xs min-w-0">
+                            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Notes <span class="normal-case tracking-normal font-normal">(optional)</span></span>
+                            <input type="text" autocomplete="off" placeholder="Offer pack, tasted stale, bought for Diwali…"
+                                   class="row-notes w-full bg-surface-container border border-outline-variant rounded px-md py-sm text-base text-on-surface focus:outline-none focus:border-secondary">
                         </label>
                     </div>
                 </template>

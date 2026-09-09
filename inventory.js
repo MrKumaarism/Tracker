@@ -38,6 +38,9 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     // How long the button holds its ✓ Saved state before going back to Save.
     const SAVED_MS = 1400;
     const LOOKUP_ROWS = 3;
+    // Most suggestions shown at once. Longer than this and the list covers the
+    // form on a phone instead of helping.
+    const SUGGEST_MAX = 8;
     const SEARCH_DEBOUNCE_MS = 150;
 
     // Typing-effect placeholder
@@ -70,10 +73,6 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     const submitBtn     = $('#invSubmitBtn');
     const cancelEditBtn = $('#invCancelEdit');
     const itemCount     = $('#invItemCount');
-    const productList   = $('#productList');
-    const categoryList  = $('#categoryList');
-    const unitList      = $('#unitList');
-    const storeList     = $('#storeList');
     const searchInput   = $('#invSearch');
     const filterBar     = $('#invFilters');
     const sortMobile    = $('#invSortMobile');
@@ -183,7 +182,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     /** Search across product, category, and store. */
     function matchesSearch(entry, term) {
         if (!term) return true;
-        return [entry.productName, entry.category, entry.store]
+        return [entry.productName, entry.category, entry.store, entry.notes]
             .some(v => String(v ?? '').toLowerCase().includes(term));
     }
 
@@ -216,6 +215,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     // ═══════════════════════════════════════════════════════
     function init() {
         readStateFromUrl();
+        attachSuggest(storeInput, SUGGEST.store);
         addItemRow();
         bindEvents();
         initNavigation();
@@ -321,7 +321,12 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             row.querySelector('.row-category').value = values.category || '';
             row.querySelector('.row-unit').value = values.unit || '';
             row.querySelector('.row-price').value = priceOf(values) || '';
+            row.querySelector('.row-notes').value = values.notes || '';
         }
+
+        attachSuggest(product, SUGGEST.product);
+        attachSuggest(row.querySelector('.row-category'), SUGGEST.category);
+        attachSuggest(row.querySelector('.row-unit'), SUGGEST.unit);
 
         product.addEventListener('input', () => {
             stopTypingOn(product);
@@ -377,6 +382,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             category: row.querySelector('.row-category').value.trim(),
             unit: row.querySelector('.row-unit').value.trim(),
             price: row.querySelector('.row-price').value.trim(),
+            notes: row.querySelector('.row-notes').value.trim(),
             el: row,
         };
     }
@@ -386,6 +392,105 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             .map(readRow)
             .filter(r => parseFloat(r.price) > 0).length;
         itemCount.textContent = filled ? `${filled} item${filled > 1 ? 's' : ''} ready` : '';
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  SUGGESTIONS
+    // ═══════════════════════════════════════════════════════
+    // Read live off `purchases`, so a product typed a moment ago is offered on
+    // the next row without a re-render.
+    const SUGGEST = {
+        product:  () => [...new Map(purchases.map(p => [p.productKey, p.productName])).values()]
+                            .filter(Boolean).sort((a, b) => a.localeCompare(b)),
+        category: () => suggestionsFor('category', SEED_CATEGORIES),
+        unit:     () => suggestionsFor('unit', SEED_UNITS),
+        store:    () => suggestionsFor('store'),
+    };
+
+    /**
+     * Turn a text input into a combo box: every past value on focus, filtered
+     * as you type, tap or arrow-key to fill.
+     * The input's parent is the <label>, which becomes the positioning context.
+     */
+    function attachSuggest(input, getValues) {
+        const holder = input.parentElement;
+        holder.style.position = 'relative';
+
+        const list = document.createElement('ul');
+        list.className = 'suggest-list hidden';
+        list.setAttribute('role', 'listbox');
+        holder.appendChild(list);
+
+        let items = [];
+        let active = -1;
+
+        function close() {
+            list.classList.add('hidden');
+            list.innerHTML = '';
+            items = [];
+            active = -1;
+        }
+
+        function paint() {
+            list.innerHTML = items.map((v, i) =>
+                `<li role="option" aria-selected="${i === active}" data-i="${i}" class="suggest-item${i === active ? ' active' : ''}">${escapeHtml(v)}</li>`
+            ).join('');
+        }
+
+        function open() {
+            const term = input.value.trim().toLowerCase();
+            const all = getValues();
+            const hits = term ? all.filter(v => v.toLowerCase().includes(term)) : all;
+
+            // Nothing to offer when the field already holds the only match.
+            if (hits.length === 1 && hits[0].toLowerCase() === term) return close();
+            if (!hits.length) return close();
+
+            items = hits.slice(0, SUGGEST_MAX);
+            active = -1;
+            paint();
+            list.classList.remove('hidden');
+        }
+
+        function choose(i) {
+            if (!items[i]) return;
+            input.value = items[i];
+            close();
+            // Let the row's own listeners (smart lookup, item count) react.
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        input.addEventListener('focus', open);
+        input.addEventListener('input', open);
+        // A tap on the list blurs the input first, so closing has to wait.
+        input.addEventListener('blur', () => setTimeout(close, 150));
+
+        input.addEventListener('keydown', (e) => {
+            if (list.classList.contains('hidden')) return;
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                const step = e.key === 'ArrowDown' ? 1 : -1;
+                active = active < 0
+                    ? (step === 1 ? 0 : items.length - 1)
+                    : (active + step + items.length) % items.length;
+                paint();
+                list.children[active]?.scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'Enter' && active >= 0) {
+                e.preventDefault();
+                choose(active);
+            } else if (e.key === 'Escape') {
+                close();
+            }
+        });
+
+        // pointerdown beats blur, so the choice is not lost on touch.
+        list.addEventListener('pointerdown', (e) => {
+            const li = e.target.closest('[data-i]');
+            if (!li) return;
+            e.preventDefault();
+            choose(Number(li.dataset.i));
+        });
     }
 
     // ═══════════════════════════════════════════════════════
@@ -715,6 +820,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             category: normaliseLabel(row.category),
             unit: row.unit,
             price: parseFloat(row.price),
+            notes: row.notes,
             store: storeInput.value.trim(),
         };
     }
@@ -834,24 +940,9 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
     //  RENDER
     // ═══════════════════════════════════════════════════════
     function render() {
-        renderDatalists();
         renderFilters();
         renderStats();
         renderDashboard();
-    }
-
-    function renderDatalists() {
-        const products = new Map();
-        for (const p of purchases) products.set(p.productKey, p.productName);
-
-        fillDatalist(productList, [...products.values()].sort((a, b) => a.localeCompare(b)));
-        fillDatalist(categoryList, suggestionsFor('category', SEED_CATEGORIES));
-        fillDatalist(unitList, suggestionsFor('unit', SEED_UNITS));
-        fillDatalist(storeList, suggestionsFor('store'));
-    }
-
-    function fillDatalist(el, values) {
-        el.innerHTML = values.map(v => `<option value="${escapeHtml(v)}"></option>`).join('');
     }
 
     function renderFilters() {
@@ -920,6 +1011,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             <td class="py-sm pr-md">
                 <div class="font-bold text-on-surface">${escapeHtml(entry.productName)}</div>
                 <div class="text-[11px] flex flex-wrap gap-x-1">${deltaMarkup(entry)}</div>
+                ${entry.notes ? `<div class="text-[11px] text-on-surface-variant italic mt-xs">${escapeHtml(entry.notes)}</div>` : ''}
             </td>
             <td class="py-sm px-md text-on-surface-variant">${escapeHtml(entry.category)}</td>
             <td class="py-sm px-md text-on-surface-variant">${escapeHtml(entry.unit)}</td>
@@ -954,6 +1046,7 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
             <div class="text-[11px] text-on-surface-variant">
                 ${formatStamp(entry.stamp)}${entry.store ? ' · ' + escapeHtml(entry.store) : ''}
             </div>
+            ${entry.notes ? `<div class="text-[11px] text-on-surface-variant italic">${escapeHtml(entry.notes)}</div>` : ''}
             <div class="flex items-center justify-between gap-sm pt-xs border-t border-dashed border-outline-variant">
                 <div class="text-[11px] flex flex-wrap gap-x-1">${deltaMarkup(entry)}</div>
                 <div class="flex gap-xs shrink-0">
@@ -1083,6 +1176,15 @@ enableIndexedDbPersistence(dbFirestore).catch((err) => {
         console.assert(sorted[0].id === 'd', 'price sort wrong');
         console.assert(sortEntries(annotated, 'purchased', 'desc')[0].id === 'b', 'date sort wrong');
         console.assert(matchesSearch(rows[0], 'dmart'), 'search must cover store');
+        console.assert(matchesSearch({ notes: 'Offer pack' }, 'offer'), 'search must cover notes');
+        console.assert(!matchesSearch({ productName: 'Milk' }, 'offer'), 'search must not match a missing note');
+
+        // The product suggestion list is keyed on productKey, so two purchases
+        // of the same thing must offer one entry, not two.
+        purchases = rows;
+        console.assert(SUGGEST.product().join() === 'Dal,Milk,Rice', 'product suggestions must dedupe and sort');
+        console.assert(SUGGEST.category().includes('Dairy'), 'category suggestions must include used values');
+        purchases = [];
         console.assert(slug('  Amul  Milk!! ') === 'amul-milk', 'slug normalisation wrong');
         console.assert(normaliseLabel('  dry   fruits ') === 'Dry Fruits', 'label normalisation wrong');
         console.log('inventory self-check done');

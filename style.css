@@ -333,3 +333,45 @@ button:focus-visible, a:focus-visible {
 #history-summary summary::-webkit-details-marker, .month-block > summary::-webkit-details-marker { display: none; }
 .month-block > summary .month-chevron { transition: transform 150ms ease; }
 .month-block[open] > summary .month-chevron { transform: rotate(180deg); }
+
+
+/* ═══════ Inventory suggestion dropdown ═══════
+   <datalist> is the native answer and it is why this exists: on iOS Safari it
+   renders as a keyboard accessory bar rather than a list under the field, so
+   past products and categories were effectively invisible on the phone this
+   app is used on. This is the same idea, drawn by us in the same place on
+   every browser. */
+.suggest-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 30;
+    margin-top: 2px;
+    max-height: 220px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    list-style: none;
+    padding: 4px;
+    background: #fdfcf9;
+    border: 1px solid #1a1a1a;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(26, 26, 26, 0.18);
+}
+
+.suggest-item {
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 15px;
+    line-height: 1.2;
+    color: #1a1a1a;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.suggest-item.active,
+.suggest-item:hover {
+    background: #98d4bb;
+}
