@@ -272,8 +272,13 @@
                                     </div>
                                 </div>
                                 <div class="flex flex-col gap-xs">
-                                    <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Vehicle Type</label>
-                                    <div class="flex gap-sm">
+                                    <div class="flex items-center justify-between">
+                                        <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Vehicle Type</label>
+                                        <button type="button" id="openAddVehicleBtn" class="text-[11px] font-semibold text-primary hover:underline flex items-center gap-[2px] cursor-pointer">
+                                            <span class="material-symbols-outlined text-[15px]">add_circle</span> Add Vehicle
+                                        </button>
+                                    </div>
+                                    <div class="flex flex-wrap gap-sm" id="vehicleRadioGroup">
                                         <label class="flex-1 cursor-pointer">
                                             <input type="radio" name="vehicleType" value="Car" checked class="peer sr-only">
                                             <div class="px-md py-sm border border-outline text-center text-sm text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary transition-all font-bold flex items-center justify-center gap-xs">
@@ -560,6 +565,59 @@
                 <button id="confirmNo" class="px-xl py-sm rounded-full bg-surface-container text-on-surface-variant text-xs font-semibold uppercase tracking-wide hover:bg-surface-container-high transition-colors">Cancel</button>
                 <button id="confirmYes" class="px-xl py-sm rounded-full bg-error text-on-error text-xs font-semibold uppercase tracking-wide shadow-md hover:shadow-lg transition-all">Confirm</button>
             </div>
+        </div>
+    </div>
+
+    <!-- ═══════ Add Vehicle Modal ═══════ -->
+    <div id="vehicleModal" class="hidden fixed inset-0 bg-black/50 z-[500] flex items-center justify-center backdrop-blur-sm animate-fade-in">
+        <div class="bg-surface-container-lowest rounded-2xl p-lg shadow-xl max-w-sm w-[90%] animate-scale-in flex flex-col gap-md">
+            <div class="flex items-center justify-between pb-xs border-b border-outline-variant">
+                <h3 class="text-base font-bold text-on-surface flex items-center gap-xs">
+                    <span class="material-symbols-outlined text-[20px] text-primary">two_wheeler</span>
+                    <span>Add Vehicle</span>
+                </h3>
+                <button type="button" id="closeVehicleModal" class="text-on-surface-variant hover:text-on-surface p-xs cursor-pointer" aria-label="Close">
+                    <span class="material-symbols-outlined text-[20px]">close</span>
+                </button>
+            </div>
+            <form id="vehicleForm" class="flex flex-col gap-md" autocomplete="off">
+                <div class="flex flex-col gap-xs">
+                    <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider" for="newVehicleName">Vehicle Name</label>
+                    <input class="w-full bg-transparent text-on-surface text-base px-sm py-sm outline-none border-b border-outline-variant focus:border-primary transition-colors" id="newVehicleName" type="text" placeholder="e.g. Scooty, Activa, Jupiter" required>
+                </div>
+                <div class="flex flex-col gap-xs">
+                    <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Type / Icon</label>
+                    <div class="grid grid-cols-3 gap-xs">
+                        <label class="cursor-pointer">
+                            <input type="radio" name="newVehicleType" value="Scooty" checked class="peer sr-only">
+                            <div class="px-sm py-xs border border-outline text-center text-xs text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary font-bold flex items-center justify-center gap-xs">
+                                <span>🛵</span> Scooty
+                            </div>
+                        </label>
+                        <label class="cursor-pointer">
+                            <input type="radio" name="newVehicleType" value="Bike" class="peer sr-only">
+                            <div class="px-sm py-xs border border-outline text-center text-xs text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary font-bold flex items-center justify-center gap-xs">
+                                <span>🏍️</span> Bike
+                            </div>
+                        </label>
+                        <label class="cursor-pointer">
+                            <input type="radio" name="newVehicleType" value="Car" class="peer sr-only">
+                            <div class="px-sm py-xs border border-outline text-center text-xs text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary font-bold flex items-center justify-center gap-xs">
+                                <span>🚗</span> Car
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-xs">
+                    <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider" for="newVehicleOdometer">Initial Odometer Reading (km)</label>
+                    <input class="w-full bg-transparent text-on-surface text-base px-sm py-sm outline-none border-b border-outline-variant focus:border-primary transition-colors" id="newVehicleOdometer" type="number" min="0" step="1" placeholder="0" value="0" required>
+                    <p class="text-[11px] text-on-surface-variant leading-snug">Enter 0 if brand-new, or current meter reading if bought second-hand (e.g. 11,768 km).</p>
+                </div>
+                <div class="flex gap-sm justify-end pt-xs border-t border-outline-variant">
+                    <button type="button" id="cancelVehicleBtn" class="px-lg py-sm rounded-full bg-surface-container text-on-surface-variant text-xs font-semibold uppercase tracking-wide hover:bg-surface-container-high transition-colors">Cancel</button>
+                    <button type="submit" id="saveVehicleBtn" class="px-lg py-sm rounded-full bg-primary text-on-primary text-xs font-semibold uppercase tracking-wide shadow-md hover:shadow-lg transition-all">Save Vehicle</button>
+                </div>
+            </form>
         </div>
     </div>
 

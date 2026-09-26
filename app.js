@@ -45,14 +45,23 @@ function isSupportFuel(vehicleType, fuelType) {
     const DB_VERSION = 1;
     const STORE_NAME = 'entries';
     const LS_KEY = 'fuel_tracker_entries';
+    const LS_VEHICLES_KEY = 'fuel_tracker_vehicles';
+
+    const DEFAULT_VEHICLES = [
+        { id: 'Car', name: 'Car', type: 'Car', initialOdometer: 0, fuelTypes: ['CNG', 'Petrol'], emoji: '🚗' },
+        { id: 'Bike', name: 'Bike', type: 'Bike', initialOdometer: 0, fuelTypes: ['Petrol'], emoji: '🏍️' },
+        { id: 'Scooty', name: 'Scooty', type: 'Scooty', initialOdometer: 11768, fuelTypes: ['Petrol'], emoji: '🛵' },
+    ];
 
     // ─── State ───
     let db = null;
     let entries = [];
+    let vehicles = [];
     let editingId = null;
     let useIndexedDB = false;
     let currentUser = null;
     let unsubscribeSnapshot = null;
+    let unsubscribeVehiclesSnapshot = null;
     let activeFilter = 'All';
 
     // ─── DOM Helpers ───
@@ -79,6 +88,16 @@ function isSupportFuel(vehicleType, fuelType) {
     const deleteEditBtn  = $('#deleteEditBtn');
     const formHeadingText = $('#formHeadingText');
     const formIconEl     = $('#formIconEl');
+
+    // Vehicle Modal DOM Refs
+    const openAddVehicleBtn  = $('#openAddVehicleBtn');
+    const vehicleModal       = $('#vehicleModal');
+    const closeVehicleModal  = $('#closeVehicleModal');
+    const cancelVehicleBtn   = $('#cancelVehicleBtn');
+    const vehicleForm        = $('#vehicleForm');
+    const newVehicleName     = $('#newVehicleName');
+    const newVehicleOdometer = $('#newVehicleOdometer');
+    const vehicleRadioGroup  = $('#vehicleRadioGroup');
 
     // Stats
     const statTotalKm      = $('#stat-total-km');
@@ -125,10 +144,154 @@ function isSupportFuel(vehicleType, fuelType) {
     const mobileLoginBtn = $('#mobileLoginBtn');
     const mobileLoginText = $('#mobileLoginText');
 
+    // ─── Vehicle Management ───
+    function loadVehicles() {
+        try {
+            const raw = localStorage.getItem(LS_VEHICLES_KEY);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    DEFAULT_VEHICLES.forEach(def => {
+                        const existing = parsed.find(v => v.name.toLowerCase() === def.name.toLowerCase());
+                        if (!existing) {
+                            parsed.push(def);
+                        } else if (def.name === 'Scooty' && (!existing.initialOdometer || existing.initialOdometer === 0)) {
+                            existing.initialOdometer = 11768;
+                        }
+                    });
+                    return parsed;
+                }
+            }
+        } catch (e) {
+            console.error('Error loading vehicles:', e);
+        }
+        return JSON.parse(JSON.stringify(DEFAULT_VEHICLES));
+    }
+
+    function saveVehicles() {
+        localStorage.setItem(LS_VEHICLES_KEY, JSON.stringify(vehicles));
+        if (currentUser) {
+            const vehRef = doc(dbFirestore, 'users', currentUser.uid, 'settings', 'vehicles');
+            setDoc(vehRef, { list: vehicles }).catch(err => console.error('Vehicle sync failed:', err));
+        }
+    }
+
+    function getVehicle(nameOrType) {
+        if (!nameOrType) return null;
+        return vehicles.find(v => (v.name && v.name.toLowerCase() === nameOrType.toLowerCase()) || 
+                                  (v.type && v.type.toLowerCase() === nameOrType.toLowerCase())) || null;
+    }
+
+    function renderVehiclesUI() {
+        const groupEl = vehicleRadioGroup || $('#vehicleRadioGroup');
+        if (!groupEl) return;
+        const currentChecked = $('input[name="vehicleType"]:checked')?.value || 'Car';
+
+        groupEl.innerHTML = vehicles.map(v => {
+            const icon = v.emoji || VEHICLE_EMOJI[v.type] || VEHICLE_EMOJI[v.name] || '🚗';
+            const isChecked = (v.name === currentChecked || v.type === currentChecked) ? 'checked' : '';
+            return `<label class="flex-1 min-w-[90px] cursor-pointer">
+                <input type="radio" name="vehicleType" value="${esc(v.name)}" ${isChecked} class="peer sr-only">
+                <div class="px-md py-sm border border-outline text-center text-sm text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary transition-all font-bold flex items-center justify-center gap-xs">
+                    <span>${icon}</span> ${esc(v.name)}
+                </div>
+            </label>`;
+        }).join('');
+
+        if (!groupEl.querySelector('input[name="vehicleType"]:checked')) {
+            const firstRadio = groupEl.querySelector('input[name="vehicleType"]');
+            if (firstRadio) firstRadio.checked = true;
+        }
+
+        $$('input[name="vehicleType"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                syncFuelTypeForVehicle();
+                calculateLive();
+            });
+        });
+
+        if (historyFilters) {
+            const existingPills = new Set(Array.from($$('.filter-pill')).map(p => p.dataset.filter));
+            vehicles.forEach(v => {
+                VEHICLE_EMOJI[v.name] = v.emoji || VEHICLE_EMOJI[v.type] || '🚗';
+                if (!existingPills.has(v.name)) {
+                    const btn = document.createElement('button');
+                    btn.className = 'filter-pill px-md py-sm rounded-full text-xs font-semibold whitespace-nowrap';
+                    btn.dataset.filter = v.name;
+                    btn.textContent = `${VEHICLE_EMOJI[v.name]} ${v.name}`;
+                    historyFilters.appendChild(btn);
+                }
+            });
+        }
+    }
+
+    function openVehicleModalDialog() {
+        if (!vehicleModal) return;
+        if (vehicleForm) vehicleForm.reset();
+        if (newVehicleOdometer) newVehicleOdometer.value = '0';
+        vehicleModal.classList.remove('hidden');
+        if (newVehicleName) setTimeout(() => newVehicleName.focus(), 50);
+    }
+
+    function closeVehicleModalDialog() {
+        if (!vehicleModal) return;
+        vehicleModal.classList.add('hidden');
+    }
+
+    function handleSaveVehicle(e) {
+        e.preventDefault();
+        const name = newVehicleName ? newVehicleName.value.trim() : '';
+        const typeRadio = $('input[name="newVehicleType"]:checked');
+        const type = typeRadio ? typeRadio.value : 'Scooty';
+        const initialOdo = newVehicleOdometer ? (parseFloat(newVehicleOdometer.value) || 0) : 0;
+
+        if (!name) {
+            showToast('Please enter a vehicle name');
+            return;
+        }
+
+        const existingIdx = vehicles.findIndex(v => v.name.toLowerCase() === name.toLowerCase());
+        const emojiMap = { Car: '🚗', Bike: '🏍️', Scooty: '🛵' };
+        const emoji = emojiMap[type] || '🚗';
+
+        const vehicleObj = {
+            id: name,
+            name,
+            type,
+            initialOdometer: initialOdo,
+            fuelTypes: type === 'Car' ? ['CNG', 'Petrol'] : ['Petrol'],
+            emoji,
+        };
+
+        if (existingIdx !== -1) {
+            vehicles[existingIdx] = vehicleObj;
+            showToast(`Updated ${name}`);
+        } else {
+            vehicles.push(vehicleObj);
+            showToast(`Added ${name} (Start: ${formatNumber(initialOdo)} km)`);
+        }
+
+        saveVehicles();
+        renderVehiclesUI();
+
+        const newRadio = $(`input[name="vehicleType"][value="${name}"]`);
+        if (newRadio) {
+            newRadio.checked = true;
+            syncFuelTypeForVehicle();
+            calculateLive();
+        }
+
+        recalculateChainsLocal();
+        render();
+        closeVehicleModalDialog();
+    }
+
     // ═══════════════════════════════════════════════════════
     //  INIT
     // ═══════════════════════════════════════════════════════
     async function init() {
+        vehicles = loadVehicles();
+        renderVehiclesUI();
         initOfflineBadge();
         setDefaultDate();
         bindEvents();
@@ -171,6 +334,10 @@ function isSupportFuel(vehicleType, fuelType) {
             if (e.tripEntered === undefined) {
                 e.tripEntered = e.km;
             }
+            // For Scooty or any vehicle with odometer reading entered
+            if (e.vehicleType === 'Scooty' && e.tripEntered >= 11768 && !e.odometer) {
+                e.odometer = e.tripEntered;
+            }
             return e;
         });
         
@@ -192,7 +359,10 @@ function isSupportFuel(vehicleType, fuelType) {
             } else {
                 // Logged out: fallback to local storage
                 if (unsubscribeSnapshot) unsubscribeSnapshot();
+                if (unsubscribeVehiclesSnapshot) unsubscribeVehiclesSnapshot();
                 entries = loadFromLocalStorage();
+                vehicles = loadVehicles();
+                renderVehiclesUI();
                 render();
             }
         });
@@ -232,6 +402,21 @@ function isSupportFuel(vehicleType, fuelType) {
         const entriesRef = collection(dbFirestore, 'users', currentUser.uid, 'entries');
         
         if (unsubscribeSnapshot) unsubscribeSnapshot();
+        if (unsubscribeVehiclesSnapshot) unsubscribeVehiclesSnapshot();
+
+        // Listen for vehicles
+        const vehRef = doc(dbFirestore, 'users', currentUser.uid, 'settings', 'vehicles');
+        unsubscribeVehiclesSnapshot = onSnapshot(vehRef, (docSnap) => {
+            if (docSnap.exists() && Array.isArray(docSnap.data()?.list) && docSnap.data().list.length > 0) {
+                vehicles = docSnap.data().list;
+                localStorage.setItem(LS_VEHICLES_KEY, JSON.stringify(vehicles));
+                renderVehiclesUI();
+                recalculateChainsLocal();
+                render();
+            }
+        }, (err) => {
+            console.warn("Vehicles listener offline/fallback:", err);
+        });
         
         // Entries logged while signed out live only on this device, and the
         // first snapshot replaces `entries` wholesale. Upload them once before
@@ -313,6 +498,10 @@ function isSupportFuel(vehicleType, fuelType) {
                 return dc !== 0 ? dc : a.createdAt - b.createdAt;
             });
 
+            const vehicleType = group[0]?.vehicleType;
+            const veh = getVehicle(vehicleType);
+            const initialOdo = (veh && typeof veh.initialOdometer === 'number') ? veh.initialOdometer : (vehicleType === 'Scooty' ? 11768 : 0);
+
             for (let i = 0; i < group.length; i++) {
                 const entry = group[i];
                 entry.qty = +(entry.spent / entry.price).toFixed(3);
@@ -329,7 +518,34 @@ function isSupportFuel(vehicleType, fuelType) {
 
                 if (i + 1 < group.length) {
                     const nextEntry = group[i + 1];
-                    entry.distanceDriven = nextEntry.tripEntered || 0;
+                    const nextKm = (nextEntry.odometer !== undefined && nextEntry.odometer > 0)
+                        ? nextEntry.odometer
+                        : (nextEntry.tripEntered || 0);
+
+                    // Determine starting odometer for cycle i
+                    let startOdo = null;
+                    if (entry.odometer !== undefined && entry.odometer > 0) {
+                        startOdo = entry.odometer;
+                    } else if (i === 0 && initialOdo > 0) {
+                        startOdo = initialOdo;
+                    } else if (i > 0) {
+                        const prevE = group[i - 1];
+                        if (prevE.odometer !== undefined && prevE.odometer > 0) {
+                            startOdo = prevE.odometer;
+                        } else if (initialOdo > 0 && prevE.tripEntered >= initialOdo) {
+                            startOdo = prevE.tripEntered;
+                        }
+                    }
+
+                    // If nextKm is an odometer reading >= startOdo:
+                    if (startOdo !== null && nextKm >= startOdo) {
+                        entry.distanceDriven = +(nextKm - startOdo).toFixed(1);
+                        if (!entry.odometer) entry.odometer = startOdo;
+                        if (!nextEntry.odometer) nextEntry.odometer = nextKm;
+                    } else {
+                        entry.distanceDriven = nextEntry.tripEntered || 0;
+                    }
+
                     if (entry.qty > 0 && entry.distanceDriven > 0) {
                         entry.mileage = +(entry.distanceDriven / entry.qty).toFixed(2);
                         entry.costPerKm = +(entry.spent / entry.distanceDriven).toFixed(2);
@@ -469,18 +685,24 @@ function isSupportFuel(vehicleType, fuelType) {
 
         // Confirm dialog
         confirmNo.addEventListener('click', () => confirmOverlay.classList.add('hidden'));
+
+        // Vehicle Modal events
+        if (openAddVehicleBtn) openAddVehicleBtn.addEventListener('click', openVehicleModalDialog);
+        if (closeVehicleModal) closeVehicleModal.addEventListener('click', closeVehicleModalDialog);
+        if (cancelVehicleBtn) cancelVehicleBtn.addEventListener('click', closeVehicleModalDialog);
+        if (vehicleForm) vehicleForm.addEventListener('submit', handleSaveVehicle);
     }
 
-    // Only the car runs on CNG. Bike and Scooty are petrol-only, so selecting
-    // either forces Petrol and locks CNG out instead of silently saving a
-    // CNG entry against a petrol vehicle.
+    // Only vehicles with CNG enabled (or Car) run on CNG. Two-wheelers are petrol-only,
+    // so selecting them forces Petrol and locks CNG out.
     function syncFuelTypeForVehicle({ resetPrice = true } = {}) {
         const vehRadio    = $('input[name="vehicleType"]:checked');
         const cngRadio    = $('input[name="fuelType"][value="CNG"]');
         const petrolRadio = $('input[name="fuelType"][value="Petrol"]');
         if (!vehRadio || !cngRadio || !petrolRadio) return;
 
-        const cngAllowed = vehRadio.value === 'Car';
+        const veh = getVehicle(vehRadio.value);
+        const cngAllowed = veh ? (veh.type === 'Car' || (veh.fuelTypes && veh.fuelTypes.includes('CNG'))) : vehRadio.value === 'Car';
         cngRadio.disabled = !cngAllowed;
         if (cngOption) cngOption.classList.toggle('cursor-pointer', cngAllowed);
 
@@ -493,24 +715,40 @@ function isSupportFuel(vehicleType, fuelType) {
 
     // Trip distance is always "how far the PREVIOUS tank took you". On the very
     // first fill of a vehicle+fuel combo there is no previous tank, so the field
-    // has nothing to measure — lock it at 0 rather than ask for a number the
-    // chain calculation ignores anyway.
-    function setTripLocked(locked, reason) {
+    // has nothing to measure. For second-hand or odometer-tracked vehicles, it
+    // records the baseline odometer reading.
+    function setTripLocked(locked, reason, prevOdo, initialOdo) {
         kmInput.disabled = locked;
         kmInput.required = !locked;
         kmInput.classList.toggle('opacity-50', locked);
-        if (locked) kmInput.value = '0';
-        if (kmHint) {
-            kmHint.classList.toggle('hidden', !locked);
-            kmHint.textContent = reason === 'support'
-                ? 'Petrol in the car only starts the engine and covers you if the CNG runs out, so there is no distance to attribute to it. The amount still counts towards your monthly spend.'
-                : 'First fill for this vehicle & fuel — there is no previous tank to measure, so leave this at 0. Your next fill records the distance.';
+
+        const hasOdometer = (initialOdo > 0) || (prevOdo !== null && prevOdo > 0);
+
+        if (locked) {
+            kmInput.value = (reason === 'first' && initialOdo > 0) ? initialOdo : '0';
+            if (kmHint) {
+                kmHint.classList.remove('hidden');
+                kmHint.textContent = reason === 'support'
+                    ? 'Petrol in the car only starts the engine and covers you if the CNG runs out, so there is no distance to attribute to it. The amount still counts towards your monthly spend.'
+                    : (initialOdo > 0
+                        ? `First fill for this vehicle — starting odometer is ${formatNumber(initialOdo)} km. Your next fill will record the new meter reading to calculate distance.`
+                        : 'First fill for this vehicle & fuel — there is no previous tank to measure, so leave this at 0. Your next fill records the distance.');
+            }
+            if (kmLabel) {
+                kmLabel.textContent = reason === 'support'
+                    ? 'Trip Distance (not tracked for backup fuel)'
+                    : (initialOdo > 0 ? `Starting Odometer (${formatNumber(initialOdo)} km)` : 'Trip Distance (first fill — none yet)');
+            }
+        } else {
+            if (hasOdometer && prevOdo !== null) {
+                kmLabel.textContent = 'Current Odometer Reading (km)';
+                kmHint.classList.remove('hidden');
+                kmHint.textContent = `Previous meter reading was ${formatNumber(prevOdo)} km. Enter your current odometer reading to calculate distance.`;
+            } else {
+                kmLabel.textContent = 'Trip Distance (since last fuel)';
+                kmHint.classList.add('hidden');
+            }
         }
-        if (kmLabel) kmLabel.textContent = !locked
-            ? 'Trip Distance (since last fuel)'
-            : reason === 'support'
-                ? 'Trip Distance (not tracked for backup fuel)'
-                : 'Trip Distance (first fill — none yet)';
     }
 
     // ═══════════════════════════════════════════════════════
@@ -549,6 +787,10 @@ function isSupportFuel(vehicleType, fuelType) {
         // so it never inherits the previous tank's preview.
         const support = isSupportFuel(vehicleType, fuelType);
         let prevEntry = null;
+        let prevOdo = null;
+        const veh = getVehicle(vehicleType);
+        const initialOdo = (veh && typeof veh.initialOdometer === 'number') ? veh.initialOdometer : (vehicleType === 'Scooty' ? 11768 : 0);
+
         if (fuelType && vehicleType && !support) {
             const group = entries.filter(e => e.vehicleType === vehicleType && e.fuelType === fuelType);
             group.sort((a, b) => {
@@ -567,9 +809,19 @@ function isSupportFuel(vehicleType, fuelType) {
                     prevEntry = priorEntries[priorEntries.length - 1];
                 }
             }
+
+            if (prevEntry) {
+                if (prevEntry.odometer !== undefined && prevEntry.odometer > 0) {
+                    prevOdo = prevEntry.odometer;
+                } else if (initialOdo > 0 && prevEntry.tripEntered >= initialOdo) {
+                    prevOdo = prevEntry.tripEntered;
+                } else if (initialOdo > 0 && group.length === 1) {
+                    prevOdo = initialOdo;
+                }
+            }
         }
 
-        setTripLocked(support || !prevEntry, support ? 'support' : 'first');
+        setTripLocked(support || !prevEntry, support ? 'support' : 'first', prevOdo, initialOdo);
 
         if (prevEntry) {
             prevBox.classList.remove('hidden');
@@ -580,11 +832,23 @@ function isSupportFuel(vehicleType, fuelType) {
             prevQty.textContent = prevEntry.qty + (fuelType === 'CNG' ? ' kg' : ' L');
             
             if (km > 0) {
-                prevDistance.textContent = km + ' km';
-                const mileage = (km / prevEntry.qty).toFixed(2);
-                const cost = (prevEntry.spent / km).toFixed(2);
-                prevMileage.textContent = mileage + (fuelType === 'CNG' ? ' km/kg' : ' km/L');
-                prevCost.textContent = '₹' + cost + '/km';
+                let distance = km;
+                if (prevOdo !== null && km >= prevOdo) {
+                    distance = +(km - prevOdo).toFixed(1);
+                    prevDistance.textContent = `${distance} km (${formatNumber(km)} - ${formatNumber(prevOdo)})`;
+                } else {
+                    prevDistance.textContent = km + ' km';
+                }
+
+                if (distance > 0 && prevEntry.qty > 0) {
+                    const mileage = (distance / prevEntry.qty).toFixed(2);
+                    const cost = (prevEntry.spent / distance).toFixed(2);
+                    prevMileage.textContent = mileage + (fuelType === 'CNG' ? ' km/kg' : ' km/L');
+                    prevCost.textContent = '₹' + cost + '/km';
+                } else {
+                    prevMileage.textContent = '--';
+                    prevCost.textContent = '--';
+                }
             } else {
                 prevDistance.textContent = '--';
                 prevMileage.textContent = '--';
@@ -624,12 +888,16 @@ function isSupportFuel(vehicleType, fuelType) {
         const qty  = +(spent / price).toFixed(3);
         const unit = fuelType === 'CNG' ? 'km/kg' : 'km/L';
 
+        const veh = getVehicle(vehicleType);
+        const initialOdo = (veh && typeof veh.initialOdometer === 'number') ? veh.initialOdometer : (vehicleType === 'Scooty' ? 11768 : 0);
+
         const entry = {
             id: editingId || generateId(),
             fuelType,
             vehicleType,
             km: km, // Keep for legacy
             tripEntered: km,
+            odometer: (initialOdo > 0 && km >= initialOdo) ? km : (km > 1000 ? km : undefined),
             price,
             spent,
             qty,
@@ -676,7 +944,7 @@ function isSupportFuel(vehicleType, fuelType) {
             submitBtn.classList.replace('bg-primary', 'bg-secondary');
 
             setTimeout(() => {
-                showToast(editingId ? 'Entry updated' : 'Entry saved. Reset Trip Meter to 0.');
+                showToast(editingId ? 'Entry updated' : (initialOdo > 0 ? 'Entry saved' : 'Entry saved. Reset Trip Meter to 0.'));
                 resetForm();
                 submitBtn.innerHTML = origHtml;
                 submitBtn.classList.replace('bg-secondary', 'bg-primary');
@@ -703,13 +971,16 @@ function isSupportFuel(vehicleType, fuelType) {
 
         editingId = id;
 
+        // Ensure vehicle options are fresh
+        renderVehiclesUI();
+
         // Set radio buttons
         const fuelRadio = $(`input[name="fuelType"][value="${entry.fuelType}"]`);
         const vehRadio = $(`input[name="vehicleType"][value="${entry.vehicleType}"]`);
         if (fuelRadio) fuelRadio.checked = true;
         if (vehRadio) vehRadio.checked = true;
 
-        kmInput.value    = entry.tripEntered !== undefined ? entry.tripEntered : entry.km;
+        kmInput.value    = entry.odometer !== undefined ? entry.odometer : (entry.tripEntered !== undefined ? entry.tripEntered : entry.km);
         priceInput.value = entry.price;
         spentInput.value = entry.spent;
         dateInput.value  = entry.date;
@@ -1232,7 +1503,9 @@ function isSupportFuel(vehicleType, fuelType) {
             const mileageBadge = clone.querySelector('.log-mileage-badge');
 
             if (isPending) {
-                kmEl.textContent = 'Pending';
+                kmEl.textContent = (entry.odometer !== undefined && entry.odometer > 0)
+                    ? `Odo ${formatNumber(entry.odometer)}`
+                    : 'Pending';
                 kmEl.classList.add('text-sm', 'italic', 'text-on-surface-variant');
                 kmEl.classList.remove('text-xl', 'text-on-surface');
                 clone.querySelector('.log-km-unit')?.remove(); // if exists
@@ -1247,7 +1520,7 @@ function isSupportFuel(vehicleType, fuelType) {
                 
                 mileageBadge.classList.add('opacity-50');
             } else {
-                kmEl.textContent = entry.distanceDriven;
+                kmEl.textContent = formatNumber(entry.distanceDriven);
                 costEl.textContent = entry.costPerKm ? entry.costPerKm.toFixed(2) : '—';
                 mileageEl.textContent = `${entry.mileage || '—'} ${entry.unit || 'km/L'}`;
                 
