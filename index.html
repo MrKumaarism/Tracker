@@ -493,6 +493,20 @@
                             <input type="file" id="importFile" accept=".json" hidden>
                         </label>
                     </div>
+                <!-- Vehicles Management -->
+                <div class="bg-surface-container-lowest rounded-2xl p-lg shadow-md flex flex-col gap-md">
+                    <div class="flex items-center gap-md">
+                        <div class="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                            <span class="material-symbols-outlined text-[22px]">garage</span>
+                        </div>
+                        <div>
+                            <h2 class="text-xl font-semibold text-on-surface">Manage Vehicles</h2>
+                            <p class="text-xs text-on-surface-variant">View your registered vehicles or remove any vehicle you no longer need.</p>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-sm" id="manageVehiclesList">
+                        <!-- Populated by JavaScript -->
+                    </div>
                 </div>
 
                 <!-- Data Info + Danger Zone -->

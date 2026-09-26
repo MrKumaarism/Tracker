@@ -286,6 +286,80 @@ function isSupportFuel(vehicleType, fuelType) {
         closeVehicleModalDialog();
     }
 
+    function deleteVehicle(name) {
+        if (!name) return;
+        if (vehicles.length <= 1) {
+            showToast('You must have at least one vehicle');
+            return;
+        }
+
+        const v = vehicles.find(x => x.name.toLowerCase() === name.toLowerCase());
+        if (!v) return;
+
+        const count = entries.filter(e => e.vehicleType && e.vehicleType.toLowerCase() === name.toLowerCase()).length;
+        const countMsg = count > 0 
+            ? ` (${count} existing fuel ${count === 1 ? 'entry' : 'entries'} will remain safe in your history)` 
+            : '';
+
+        showConfirm(`Delete vehicle "${v.name}"?${countMsg} This will remove it from your vehicle options.`, () => {
+            vehicles = vehicles.filter(x => x.name.toLowerCase() !== name.toLowerCase());
+            saveVehicles();
+            renderVehiclesUI();
+            renderManageVehiclesUI();
+
+            const checkedVeh = $('input[name="vehicleType"]:checked');
+            if (!checkedVeh || checkedVeh.value.toLowerCase() === name.toLowerCase()) {
+                const firstRadio = $('input[name="vehicleType"]');
+                if (firstRadio) {
+                    firstRadio.checked = true;
+                    syncFuelTypeForVehicle();
+                    calculateLive();
+                }
+            }
+
+            recalculateChainsLocal();
+            render();
+            showToast(`Vehicle "${v.name}" deleted`);
+        });
+    }
+
+    function renderManageVehiclesUI() {
+        const listEl = $('#manageVehiclesList');
+        if (!listEl) return;
+
+        if (vehicles.length === 0) {
+            listEl.innerHTML = `<p class="text-sm text-on-surface-variant italic py-xs">No vehicles registered.</p>`;
+            return;
+        }
+
+        listEl.innerHTML = vehicles.map(v => {
+            const icon = v.emoji || VEHICLE_EMOJI[v.type] || VEHICLE_EMOJI[v.name] || '🚗';
+            const count = entries.filter(e => e.vehicleType && e.vehicleType.toLowerCase() === v.name.toLowerCase()).length;
+            const entryText = `${count} ${count === 1 ? 'fill' : 'fills'} logged`;
+            return `<div class="flex items-center justify-between p-sm px-md rounded-xl bg-surface-container border border-outline-variant/30">
+                <div class="flex items-center gap-md min-w-0">
+                    <span class="text-2xl shrink-0">${icon}</span>
+                    <div class="flex flex-col min-w-0">
+                        <span class="text-sm font-bold text-on-surface truncate">${esc(v.name)}</span>
+                        <span class="text-[11px] text-on-surface-variant truncate">
+                            Type: ${esc(v.type)} · Start: ${formatNumber(v.initialOdometer || 0)} km · ${entryText}
+                        </span>
+                    </div>
+                </div>
+                <button class="p-xs text-on-surface-variant hover:text-error hover:bg-error/10 rounded-lg transition-colors cursor-pointer delete-veh-btn shrink-0 ml-sm" data-veh-name="${esc(v.name)}" title="Delete ${esc(v.name)}" aria-label="Delete ${esc(v.name)}">
+                    <span class="material-symbols-outlined text-[20px]">delete</span>
+                </button>
+            </div>`;
+        }).join('');
+
+        listEl.querySelectorAll('.delete-veh-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteVehicle(btn.dataset.vehName);
+            });
+        });
+    }
+
     // ═══════════════════════════════════════════════════════
     //  INIT
     // ═══════════════════════════════════════════════════════
@@ -1618,6 +1692,7 @@ function isSupportFuel(vehicleType, fuelType) {
     function updateDataPage() {
         if (dataEntryCount) dataEntryCount.textContent = entries.length;
         if (dataStorageType) dataStorageType.textContent = currentUser ? 'Firebase' : 'localStorage';
+        renderManageVehiclesUI();
     }
 
     // ═══════════════════════════════════════════════════════
