@@ -151,14 +151,10 @@ function isSupportFuel(vehicleType, fuelType) {
             if (raw) {
                 const parsed = JSON.parse(raw);
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    DEFAULT_VEHICLES.forEach(def => {
-                        const existing = parsed.find(v => v.name.toLowerCase() === def.name.toLowerCase());
-                        if (!existing) {
-                            parsed.push(def);
-                        } else if (def.name === 'Scooty' && (!existing.initialOdometer || existing.initialOdometer === 0)) {
-                            existing.initialOdometer = 11768;
-                        }
-                    });
+                    const scooty = parsed.find(v => v.name.toLowerCase() === 'scooty');
+                    if (scooty && (!scooty.initialOdometer || scooty.initialOdometer === 0)) {
+                        scooty.initialOdometer = 11768;
+                    }
                     return parsed;
                 }
             }
@@ -185,15 +181,33 @@ function isSupportFuel(vehicleType, fuelType) {
     function renderVehiclesUI() {
         const groupEl = vehicleRadioGroup || $('#vehicleRadioGroup');
         if (!groupEl) return;
-        const currentChecked = $('input[name="vehicleType"]:checked')?.value || 'Car';
+
+        if (!vehicles || vehicles.length === 0) {
+            groupEl.innerHTML = `
+                <button type="button" id="inlineAddVehicleBtn" class="w-full py-sm px-md border-2 border-dashed border-primary/50 rounded-xl text-primary font-bold text-xs flex items-center justify-center gap-xs hover:bg-primary/10 transition-colors cursor-pointer">
+                    <span class="material-symbols-outlined text-[18px]">add_circle</span> Add your vehicle
+                </button>
+            `;
+            const inlineBtn = $('#inlineAddVehicleBtn');
+            if (inlineBtn) {
+                inlineBtn.onclick = openVehicleModalDialog;
+            }
+            return;
+        }
+
+        const currentChecked = $('input[name="vehicleType"]:checked')?.value;
 
         groupEl.innerHTML = vehicles.map(v => {
             const icon = v.emoji || VEHICLE_EMOJI[v.type] || VEHICLE_EMOJI[v.name] || '🚗';
-            const isChecked = (v.name === currentChecked || v.type === currentChecked) ? 'checked' : '';
-            return `<label class="flex-1 min-w-[90px] cursor-pointer">
+            const isChecked = (currentChecked && (v.name === currentChecked || v.type === currentChecked)) ? 'checked' : '';
+            return `<label class="flex-1 min-w-[95px] cursor-pointer">
                 <input type="radio" name="vehicleType" value="${esc(v.name)}" ${isChecked} class="peer sr-only">
-                <div class="px-md py-sm border border-outline text-center text-sm text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary transition-all font-bold flex items-center justify-center gap-xs">
-                    <span>${icon}</span> ${esc(v.name)}
+                <div class="px-md py-sm border border-outline text-center text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary transition-all font-bold flex flex-col items-center justify-center gap-[2px] rounded-lg">
+                    <div class="flex items-center justify-center gap-xs min-w-0">
+                        <span class="text-base shrink-0">${icon}</span>
+                        <span class="text-sm font-bold truncate">${esc(v.name)}</span>
+                    </div>
+                    <span class="text-[10px] font-semibold uppercase tracking-wider opacity-80">${esc(v.type || 'Vehicle')}</span>
                 </div>
             </label>`;
         }).join('');
@@ -265,10 +279,16 @@ function isSupportFuel(vehicleType, fuelType) {
 
         if (existingIdx !== -1) {
             vehicles[existingIdx] = vehicleObj;
-            showToast(`Updated ${name}`);
+            showToast(`Updated ${name} (${type})`);
         } else {
-            vehicles.push(vehicleObj);
-            showToast(`Added ${name} (Start: ${formatNumber(initialOdo)} km)`);
+            const hasDefaultOnly = vehicles.length > 0 && vehicles.every(v => ['car', 'bike', 'scooty'].includes(v.name.toLowerCase()));
+            const defaultsUsed = vehicles.some(v => entries.some(entry => entry.vehicleType && entry.vehicleType.toLowerCase() === v.name.toLowerCase()));
+            if (hasDefaultOnly && !defaultsUsed) {
+                vehicles = [vehicleObj];
+            } else {
+                vehicles.push(vehicleObj);
+            }
+            showToast(`Added ${name} (${type})`);
         }
 
         saveVehicles();
@@ -364,6 +384,7 @@ function isSupportFuel(vehicleType, fuelType) {
     //  INIT
     // ═══════════════════════════════════════════════════════
     async function init() {
+        entries = loadFromLocalStorage();
         vehicles = loadVehicles();
         renderVehiclesUI();
         initOfflineBadge();

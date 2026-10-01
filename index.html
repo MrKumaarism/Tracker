@@ -273,30 +273,13 @@
                                 </div>
                                 <div class="flex flex-col gap-xs">
                                     <div class="flex items-center justify-between">
-                                        <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Vehicle Type</label>
+                                        <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Vehicle</label>
                                         <button type="button" id="openAddVehicleBtn" class="text-[11px] font-semibold text-primary hover:underline flex items-center gap-[2px] cursor-pointer">
                                             <span class="material-symbols-outlined text-[15px]">add_circle</span> Add Vehicle
                                         </button>
                                     </div>
                                     <div class="flex flex-wrap gap-sm" id="vehicleRadioGroup">
-                                        <label class="flex-1 cursor-pointer">
-                                            <input type="radio" name="vehicleType" value="Car" checked class="peer sr-only">
-                                            <div class="px-md py-sm border border-outline text-center text-sm text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary transition-all font-bold flex items-center justify-center gap-xs">
-                                                <span class="material-symbols-outlined text-[18px]">directions_car</span> Car
-                                            </div>
-                                        </label>
-                                        <label class="flex-1 cursor-pointer">
-                                            <input type="radio" name="vehicleType" value="Bike" class="peer sr-only">
-                                            <div class="px-md py-sm border border-outline text-center text-sm text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary transition-all font-bold flex items-center justify-center gap-xs">
-                                                <span class="material-symbols-outlined text-[18px]">two_wheeler</span> Bike
-                                            </div>
-                                        </label>
-                                        <label class="flex-1 cursor-pointer">
-                                            <input type="radio" name="vehicleType" value="Scooty" class="peer sr-only">
-                                            <div class="px-md py-sm border border-outline text-center text-sm text-on-surface-variant peer-checked:bg-primary peer-checked:text-on-primary transition-all font-bold flex items-center justify-center gap-xs">
-                                                <span class="material-symbols-outlined text-[18px]">moped</span> Scooty
-                                            </div>
-                                        </label>
+                                        <!-- Dynamically populated from registered vehicles -->
                                     </div>
                                 </div>
                             </div>
