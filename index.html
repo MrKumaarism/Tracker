@@ -292,10 +292,22 @@
                                     <p class="hidden text-[11px] text-on-surface-variant leading-snug" id="kmDrivenHint">First fill for this vehicle &amp; fuel &mdash; there is no previous tank to measure, so leave this at 0. Your next fill records the distance.</p>
                                 </div>
                                 <div class="flex flex-col gap-xs">
-                                    <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider" for="fuelPrice">Fuel Price (<span id="fuel-price-unit-label">₹/kg</span>)</label>
+                                    <div class="flex items-center justify-between">
+                                        <label class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider" for="fuelPrice">Fuel Price (<span id="fuel-price-unit-label">₹/kg</span>)</label>
+                                        <div class="flex items-center gap-[2px] text-primary">
+                                            <span class="material-symbols-outlined text-[13px]">location_on</span>
+                                            <select id="fuelCitySelect" class="bg-surface-container/60 hover:bg-surface-container text-primary font-bold text-[10px] rounded px-xs py-[2px] border border-outline-variant/60 outline-none cursor-pointer transition-colors" aria-label="Fuel City">
+                                                <!-- Populated dynamically -->
+                                            </select>
+                                        </div>
+                                    </div>
                                     <div class="relative">
                                         <span class="absolute left-0 top-1/2 -translate-y-1/2 text-on-surface-variant">₹</span>
                                         <input class="w-full bg-transparent text-on-surface text-base pl-lg pr-sm py-sm outline-none border-b border-outline-variant focus:border-primary transition-colors" id="fuelPrice" type="number" min="0.1" step="0.01" placeholder="83.00" value="83" required>
+                                    </div>
+                                    <div class="flex items-center justify-between text-[10px] text-on-surface-variant leading-tight" id="fuelPriceHintRow">
+                                        <span id="fuelPriceLiveHint" class="truncate">Live rate: ₹102.12/L</span>
+                                        <button type="button" id="resetFuelPriceBtn" class="text-primary font-semibold hover:underline cursor-pointer shrink-0 ml-xs hidden">Reset</button>
                                     </div>
                                 </div>
                                 <div class="flex flex-col gap-xs">
@@ -476,6 +488,41 @@
                             <input type="file" id="importFile" accept=".json" hidden>
                         </label>
                     </div>
+                </div>
+
+                <!-- Fuel Location Preferences -->
+                <div class="bg-surface-container-lowest rounded-2xl p-lg shadow-md flex flex-col gap-md">
+                    <div class="flex items-center gap-md">
+                        <div class="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                            <span class="material-symbols-outlined text-[22px]">pin_drop</span>
+                        </div>
+                        <div>
+                            <h2 class="text-xl font-semibold text-on-surface">Fuel Location Preferences</h2>
+                            <p class="text-xs text-on-surface-variant">Default cities for live fuel rates. Switch anytime on the home screen or here.</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-md pt-xs">
+                        <div class="flex flex-col gap-xs p-md rounded-xl bg-surface-container border border-outline-variant/30">
+                            <span class="text-xs font-bold text-on-surface flex items-center gap-xs">
+                                <span>⛽</span> Petrol Default City
+                            </span>
+                            <select id="prefPetrolCity" class="w-full bg-surface-container-lowest text-on-surface font-semibold text-sm rounded-lg px-sm py-xs border border-outline-variant outline-none cursor-pointer">
+                                <!-- Populated dynamically -->
+                            </select>
+                            <span class="text-[11px] text-on-surface-variant font-medium" id="prefPetrolRateText">Live rate: ₹102.12/L</span>
+                        </div>
+                        <div class="flex flex-col gap-xs p-md rounded-xl bg-surface-container border border-outline-variant/30">
+                            <span class="text-xs font-bold text-on-surface flex items-center gap-xs">
+                                <span>⚡</span> CNG Default City
+                            </span>
+                            <select id="prefCngCity" class="w-full bg-surface-container-lowest text-on-surface font-semibold text-sm rounded-lg px-sm py-xs border border-outline-variant outline-none cursor-pointer">
+                                <!-- Populated dynamically -->
+                            </select>
+                            <span class="text-[11px] text-on-surface-variant font-medium" id="prefCngRateText">Live rate: ₹86.98/kg</span>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Vehicles Management -->
                 <div class="bg-surface-container-lowest rounded-2xl p-lg shadow-md flex flex-col gap-md">
                     <div class="flex items-center gap-md">

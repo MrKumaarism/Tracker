@@ -1,0 +1,104 @@
+{
+  "updatedAt": "2026-10-02T05:41:32.216Z",
+  "source": "Oil Marketing Companies (IOCL/BPCL/HPCL/IGL)",
+  "cities": {
+    "noida": {
+      "name": "Noida",
+      "state": "Uttar Pradesh",
+      "petrol": 102.12,
+      "cng": 95.59,
+      "diesel": 95.44
+    },
+    "delhi": {
+      "name": "Delhi",
+      "state": "Delhi",
+      "petrol": 94.72,
+      "cng": 86.98,
+      "diesel": 87.62
+    },
+    "gurgaon": {
+      "name": "Gurugram",
+      "state": "Haryana",
+      "petrol": 102.97,
+      "cng": 92.01,
+      "diesel": 95.64
+    },
+    "ghaziabad": {
+      "name": "Ghaziabad",
+      "state": "Uttar Pradesh",
+      "petrol": 101.88,
+      "cng": 95.59,
+      "diesel": 95.36
+    },
+    "faridabad": {
+      "name": "Faridabad",
+      "state": "Haryana",
+      "petrol": 103.35,
+      "cng": 99.7,
+      "diesel": 96.01
+    },
+    "mumbai": {
+      "name": "Mumbai",
+      "state": "Maharashtra",
+      "petrol": 111.21,
+      "cng": 88,
+      "diesel": 97.83
+    },
+    "bangalore": {
+      "name": "Bengaluru",
+      "state": "Karnataka",
+      "petrol": 111.68,
+      "cng": 97,
+      "diesel": 99.56
+    },
+    "hyderabad": {
+      "name": "Hyderabad",
+      "state": "Telangana",
+      "petrol": 116.15,
+      "cng": 112,
+      "diesel": 104.23
+    },
+    "chennai": {
+      "name": "Chennai",
+      "state": "Tamil Nadu",
+      "petrol": 107.76,
+      "cng": 97.5,
+      "diesel": 99.55
+    },
+    "kolkata": {
+      "name": "Kolkata",
+      "state": "West Bengal",
+      "petrol": 113.51,
+      "cng": 93.5,
+      "diesel": 99.82
+    },
+    "pune": {
+      "name": "Pune",
+      "state": "Maharashtra",
+      "petrol": 112.02,
+      "cng": 98.5,
+      "diesel": 98.66
+    },
+    "jaipur": {
+      "name": "Jaipur",
+      "state": "Rajasthan",
+      "petrol": 113.19,
+      "cng": 97.5,
+      "diesel": 98.25
+    },
+    "lucknow": {
+      "name": "Lucknow",
+      "state": "Uttar Pradesh",
+      "petrol": 101.86,
+      "cng": 95.75,
+      "diesel": 95.36
+    },
+    "chandigarh": {
+      "name": "Chandigarh",
+      "state": "Punjab / Haryana",
+      "petrol": 101.54,
+      "cng": 93.8,
+      "diesel": 89.47
+    }
+  }
+}

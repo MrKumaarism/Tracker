@@ -11,7 +11,7 @@
    network does not.
    ═══════════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'fuel-tracker-v35';
+const CACHE_NAME = 'fuel-tracker-v36';
 
 // How long to wait for the network before falling back to cache. Without a
 // timeout, "connected to wifi with no internet" hangs the app instead of
@@ -28,6 +28,7 @@ const APP_SHELL = [
     './inventory.js',
     './sw-register.js',
     './manifest.json',
+    './fuel-prices.json',
     './icons/favicon.svg',
     './icons/apple-touch-icon-180.png',
     './icons/icon-192.png',

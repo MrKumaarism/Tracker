@@ -46,6 +46,29 @@ function isSupportFuel(vehicleType, fuelType) {
     const STORE_NAME = 'entries';
     const LS_KEY = 'fuel_tracker_entries';
     const LS_VEHICLES_KEY = 'fuel_tracker_vehicles';
+    const LS_FUEL_CITIES_KEY = 'fuel_tracker_fuel_cities';
+
+    const DEFAULT_FUEL_CITIES = {
+        Petrol: 'noida',
+        CNG: 'delhi'
+    };
+
+    const DEFAULT_CITIES_DATA = {
+        noida: { name: 'Noida', state: 'Uttar Pradesh', petrol: 102.12, cng: 95.59 },
+        delhi: { name: 'Delhi', state: 'Delhi', petrol: 94.72, cng: 86.98 },
+        gurgaon: { name: 'Gurugram', state: 'Haryana', petrol: 95.19, cng: 89.62 },
+        ghaziabad: { name: 'Ghaziabad', state: 'Uttar Pradesh', petrol: 101.88, cng: 95.59 },
+        faridabad: { name: 'Faridabad', state: 'Haryana', petrol: 95.45, cng: 89.62 },
+        mumbai: { name: 'Mumbai', state: 'Maharashtra', petrol: 103.44, cng: 75.00 },
+        bangalore: { name: 'Bengaluru', state: 'Karnataka', petrol: 102.86, cng: 83.50 },
+        hyderabad: { name: 'Hyderabad', state: 'Telangana', petrol: 107.41, cng: 92.00 },
+        chennai: { name: 'Chennai', state: 'Tamil Nadu', petrol: 100.75, cng: 86.00 },
+        kolkata: { name: 'Kolkata', state: 'West Bengal', petrol: 103.94, cng: 86.00 },
+        pune: { name: 'Pune', state: 'Maharashtra', petrol: 103.73, cng: 87.00 },
+        jaipur: { name: 'Jaipur', state: 'Rajasthan', petrol: 104.88, cng: 87.50 },
+        lucknow: { name: 'Lucknow', state: 'Uttar Pradesh', petrol: 94.65, cng: 91.00 },
+        chandigarh: { name: 'Chandigarh', state: 'Punjab / Haryana', petrol: 94.24, cng: 87.70 }
+    };
 
     const DEFAULT_VEHICLES = [
         { id: 'Car', name: 'Car', type: 'Car', initialOdometer: 0, fuelTypes: ['CNG', 'Petrol'], emoji: '🚗' },
@@ -57,11 +80,14 @@ function isSupportFuel(vehicleType, fuelType) {
     let db = null;
     let entries = [];
     let vehicles = [];
+    let userFuelCities = { ...DEFAULT_FUEL_CITIES };
+    let liveFuelPrices = null;
     let editingId = null;
     let useIndexedDB = false;
     let currentUser = null;
     let unsubscribeSnapshot = null;
     let unsubscribeVehiclesSnapshot = null;
+    let unsubscribePreferencesSnapshot = null;
     let activeFilter = 'All';
 
     // ─── DOM Helpers ───
@@ -81,6 +107,13 @@ function isSupportFuel(vehicleType, fuelType) {
     const liveMileage    = $('#live-mileage');
     const liveCostPerKm  = $('#live-cost-per-km');
     const priceUnitLabel = $('#fuel-price-unit-label');
+    const fuelCitySelect     = $('#fuelCitySelect');
+    const fuelPriceLiveHint  = $('#fuelPriceLiveHint');
+    const resetFuelPriceBtn  = $('#resetFuelPriceBtn');
+    const prefPetrolCity     = $('#prefPetrolCity');
+    const prefCngCity        = $('#prefCngCity');
+    const prefPetrolRateText = $('#prefPetrolRateText');
+    const prefCngRateText    = $('#prefCngRateText');
     const estUnitLabel   = $('#est-unit-label');
     const submitBtn      = $('#submitBtn');
     const submitBtnText  = $('#submitBtnText');
@@ -143,6 +176,140 @@ function isSupportFuel(vehicleType, fuelType) {
     const sidebarLoginText = $('#sidebarLoginText');
     const mobileLoginBtn = $('#mobileLoginBtn');
     const mobileLoginText = $('#mobileLoginText');
+
+    // ─── Live Fuel Prices & Location Preferences ───
+    function loadUserFuelCities() {
+        try {
+            const raw = localStorage.getItem(LS_FUEL_CITIES_KEY);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object') {
+                    return { ...DEFAULT_FUEL_CITIES, ...parsed };
+                }
+            }
+        } catch (e) {
+            console.error('Error loading fuel cities:', e);
+        }
+        return { ...DEFAULT_FUEL_CITIES };
+    }
+
+    function saveUserFuelCities() {
+        localStorage.setItem(LS_FUEL_CITIES_KEY, JSON.stringify(userFuelCities));
+        if (currentUser) {
+            const prefRef = doc(dbFirestore, 'users', currentUser.uid, 'settings', 'preferences');
+            setDoc(prefRef, { fuelCities: userFuelCities }, { merge: true }).catch(err => console.error('Pref sync failed:', err));
+        }
+    }
+
+    function getLiveRate(fuelType, cityKey) {
+        const cities = liveFuelPrices?.cities || DEFAULT_CITIES_DATA;
+        const c = cities[cityKey] || cities['noida'] || DEFAULT_CITIES_DATA['noida'];
+        const prop = (fuelType || 'petrol').toLowerCase();
+        if (c && typeof c[prop] === 'number') {
+            return c[prop];
+        }
+        return fuelType === 'CNG' ? 86.98 : 102.12;
+    }
+
+    function getCityName(cityKey) {
+        const cities = liveFuelPrices?.cities || DEFAULT_CITIES_DATA;
+        return cities[cityKey]?.name || cityKey;
+    }
+
+    function populateCityDropdowns() {
+        const cities = liveFuelPrices?.cities || DEFAULT_CITIES_DATA;
+        const sortedEntries = Object.entries(cities).sort((a, b) => {
+            if (a[0] === 'noida') return -1;
+            if (b[0] === 'noida') return 1;
+            if (a[0] === 'delhi') return -1;
+            if (b[0] === 'delhi') return 1;
+            return (a[1].name || '').localeCompare(b[1].name || '');
+        });
+
+        const optionsHtml = sortedEntries.map(([key, c]) => 
+            `<option value="${key}">${esc(c.name)}</option>`
+        ).join('');
+
+        if (fuelCitySelect) fuelCitySelect.innerHTML = optionsHtml;
+        if (prefPetrolCity) prefPetrolCity.innerHTML = optionsHtml;
+        if (prefCngCity) prefCngCity.innerHTML = optionsHtml;
+    }
+
+    function syncPreferencesUI() {
+        if (prefPetrolCity) prefPetrolCity.value = userFuelCities.Petrol || 'noida';
+        if (prefCngCity) prefCngCity.value = userFuelCities.CNG || 'delhi';
+        
+        if (prefPetrolRateText) {
+            const rate = getLiveRate('Petrol', userFuelCities.Petrol || 'noida');
+            prefPetrolRateText.textContent = `Live rate: ₹${rate.toFixed(2)}/L`;
+        }
+        if (prefCngRateText) {
+            const rate = getLiveRate('CNG', userFuelCities.CNG || 'delhi');
+            prefCngRateText.textContent = `Live rate: ₹${rate.toFixed(2)}/kg`;
+        }
+    }
+
+    function checkPriceInputDirty() {
+        const fuelRadio = $('input[name="fuelType"]:checked');
+        const fuelType = fuelRadio ? fuelRadio.value : 'Petrol';
+        const cityKey = userFuelCities[fuelType] || (fuelType === 'CNG' ? 'delhi' : 'noida');
+        const liveRate = getLiveRate(fuelType, cityKey);
+        const currentVal = parseFloat(priceInput.value);
+
+        if (resetFuelPriceBtn) {
+            const isDirty = !isNaN(currentVal) && Math.abs(currentVal - liveRate) >= 0.01;
+            resetFuelPriceBtn.classList.toggle('hidden', !isDirty);
+        }
+    }
+
+    function updateLivePriceUI({ forceInput = false } = {}) {
+        const fuelRadio = $('input[name="fuelType"]:checked');
+        const fuelType = fuelRadio ? fuelRadio.value : 'Petrol';
+        const cityKey = userFuelCities[fuelType] || (fuelType === 'CNG' ? 'delhi' : 'noida');
+
+        if (fuelCitySelect) {
+            fuelCitySelect.value = cityKey;
+        }
+
+        const liveRate = getLiveRate(fuelType, cityKey);
+        const unit = fuelType === 'CNG' ? 'kg' : 'L';
+        const cityName = getCityName(cityKey);
+
+        if (fuelPriceLiveHint) {
+            fuelPriceLiveHint.textContent = `Live ref: ₹${liveRate.toFixed(2)}/${unit} (${cityName})`;
+        }
+
+        if (priceUnitLabel) {
+            priceUnitLabel.textContent = `₹/${unit}`;
+        }
+
+        const currentVal = parseFloat(priceInput.value);
+
+        if (forceInput || isNaN(currentVal) || currentVal === 102 || currentVal === 83 || currentVal === 102.12 || currentVal === 86.98) {
+            priceInput.value = liveRate.toFixed(2);
+            if (resetFuelPriceBtn) resetFuelPriceBtn.classList.add('hidden');
+            calculateLive();
+        } else {
+            checkPriceInputDirty();
+        }
+    }
+
+    async function fetchLiveFuelPrices() {
+        try {
+            const res = await fetch('./fuel-prices.json', { cache: 'no-cache' });
+            if (res.ok) {
+                const data = await res.json();
+                if (data && data.cities && Object.keys(data.cities).length > 0) {
+                    liveFuelPrices = data;
+                }
+            }
+        } catch (e) {
+            console.warn('Could not fetch ./fuel-prices.json, using fallback rates:', e);
+        }
+        populateCityDropdowns();
+        syncPreferencesUI();
+        updateLivePriceUI({ forceInput: false });
+    }
 
     // ─── Vehicle Management ───
     function loadVehicles() {
@@ -385,7 +552,10 @@ function isSupportFuel(vehicleType, fuelType) {
     // ═══════════════════════════════════════════════════════
     async function init() {
         entries = loadFromLocalStorage();
+        userFuelCities = loadUserFuelCities();
         vehicles = loadVehicles();
+        populateCityDropdowns();
+        syncPreferencesUI();
         renderVehiclesUI();
         initOfflineBadge();
         setDefaultDate();
@@ -393,6 +563,9 @@ function isSupportFuel(vehicleType, fuelType) {
         initNavigation();
         syncFuelTypeForVehicle({ resetPrice: false });
         calculateLive();
+
+        // Fetch live fuel rates in background
+        fetchLiveFuelPrices();
 
         // Initialize Firebase Auth which will load data
         initAuth();
@@ -455,9 +628,14 @@ function isSupportFuel(vehicleType, fuelType) {
                 // Logged out: fallback to local storage
                 if (unsubscribeSnapshot) unsubscribeSnapshot();
                 if (unsubscribeVehiclesSnapshot) unsubscribeVehiclesSnapshot();
+                if (unsubscribePreferencesSnapshot) unsubscribePreferencesSnapshot();
                 entries = loadFromLocalStorage();
+                userFuelCities = loadUserFuelCities();
                 vehicles = loadVehicles();
+                populateCityDropdowns();
+                syncPreferencesUI();
                 renderVehiclesUI();
+                updateLivePriceUI();
                 render();
             }
         });
@@ -498,6 +676,20 @@ function isSupportFuel(vehicleType, fuelType) {
         
         if (unsubscribeSnapshot) unsubscribeSnapshot();
         if (unsubscribeVehiclesSnapshot) unsubscribeVehiclesSnapshot();
+        if (unsubscribePreferencesSnapshot) unsubscribePreferencesSnapshot();
+
+        // Listen for preferences
+        const prefRef = doc(dbFirestore, 'users', currentUser.uid, 'settings', 'preferences');
+        unsubscribePreferencesSnapshot = onSnapshot(prefRef, (docSnap) => {
+            if (docSnap.exists() && docSnap.data()?.fuelCities) {
+                userFuelCities = { ...DEFAULT_FUEL_CITIES, ...docSnap.data().fuelCities };
+                localStorage.setItem(LS_FUEL_CITIES_KEY, JSON.stringify(userFuelCities));
+                syncPreferencesUI();
+                updateLivePriceUI();
+            }
+        }, (err) => {
+            console.warn("Preferences listener offline/fallback:", err);
+        });
 
         // Listen for vehicles
         const vehRef = doc(dbFirestore, 'users', currentUser.uid, 'settings', 'vehicles');
@@ -736,17 +928,63 @@ function isSupportFuel(vehicleType, fuelType) {
 
         // Live calculation
         kmInput.addEventListener('input', calculateLive);
-        priceInput.addEventListener('input', calculateLive);
+        priceInput.addEventListener('input', () => {
+            checkPriceInputDirty();
+            calculateLive();
+        });
         spentInput.addEventListener('input', calculateLive);
         dateInput.addEventListener('change', calculateLive);
 
-        // Fuel type change → update unit labels + default price
+        if (resetFuelPriceBtn) {
+            resetFuelPriceBtn.addEventListener('click', () => {
+                updateLivePriceUI({ forceInput: true });
+                const fuelType = $('input[name="fuelType"]:checked')?.value || 'Petrol';
+                const cityKey = userFuelCities[fuelType] || (fuelType === 'CNG' ? 'delhi' : 'noida');
+                const liveRate = getLiveRate(fuelType, cityKey);
+                showToast(`Price reset to live ${fuelType} rate (₹${liveRate.toFixed(2)})`);
+            });
+        }
+
+        if (fuelCitySelect) {
+            fuelCitySelect.addEventListener('change', (e) => {
+                const newCity = e.target.value;
+                const fuelType = $('input[name="fuelType"]:checked')?.value || 'Petrol';
+                userFuelCities[fuelType] = newCity;
+                saveUserFuelCities();
+                syncPreferencesUI();
+                updateLivePriceUI({ forceInput: true });
+                const cityName = getCityName(newCity);
+                const liveRate = getLiveRate(fuelType, newCity);
+                showToast(`📍 ${fuelType} city set to ${cityName} (₹${liveRate.toFixed(2)})`);
+            });
+        }
+
+        if (prefPetrolCity) {
+            prefPetrolCity.addEventListener('change', (e) => {
+                userFuelCities.Petrol = e.target.value;
+                saveUserFuelCities();
+                syncPreferencesUI();
+                const isPetrol = $('input[name="fuelType"]:checked')?.value === 'Petrol';
+                updateLivePriceUI({ forceInput: isPetrol });
+                showToast(`📍 Default Petrol city set to ${getCityName(e.target.value)}`);
+            });
+        }
+
+        if (prefCngCity) {
+            prefCngCity.addEventListener('change', (e) => {
+                userFuelCities.CNG = e.target.value;
+                saveUserFuelCities();
+                syncPreferencesUI();
+                const isCng = $('input[name="fuelType"]:checked')?.value === 'CNG';
+                updateLivePriceUI({ forceInput: isCng });
+                showToast(`📍 Default CNG city set to ${getCityName(e.target.value)}`);
+            });
+        }
+
+        // Fuel type change → update live price + unit labels
         $$('input[name="fuelType"]').forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                const isPetrol = e.target.value === 'Petrol';
-                priceUnitLabel.textContent = isPetrol ? '₹/L' : '₹/kg';
-                priceInput.value = isPetrol ? '102' : '83';
-                calculateLive();
+            radio.addEventListener('change', () => {
+                updateLivePriceUI({ forceInput: true });
             });
         });
         
@@ -803,9 +1041,9 @@ function isSupportFuel(vehicleType, fuelType) {
 
         if (!cngAllowed && cngRadio.checked) {
             petrolRadio.checked = true;
-            if (resetPrice) priceInput.value = '102';
         }
-        priceUnitLabel.textContent = petrolRadio.checked ? '₹/L' : '₹/kg';
+
+        updateLivePriceUI({ forceInput: resetPrice });
     }
 
     // Trip distance is always "how far the PREVIOUS tank took you". On the very
