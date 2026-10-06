@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-05T06:15:09.041Z",
+  "updatedAt": "2026-10-06T06:53:18.492Z",
   "source": "Oil Marketing Companies (IOCL/BPCL/HPCL/IGL)",
   "cities": {
     "noida": {
@@ -75,9 +75,9 @@
     "pune": {
       "name": "Pune",
       "state": "Maharashtra",
-      "petrol": 111.9,
+      "petrol": 112.02,
       "cng": 98.5,
-      "diesel": 98.55
+      "diesel": 98.66
     },
     "jaipur": {
       "name": "Jaipur",
@@ -96,9 +96,9 @@
     "chandigarh": {
       "name": "Chandigarh",
       "state": "Punjab / Haryana",
-      "petrol": 101.54,
+      "petrol": 105.93,
       "cng": 93.8,
-      "diesel": 89.47
+      "diesel": 95.82
     }
   }
 }
