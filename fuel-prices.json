@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-10T06:24:29.428Z",
+  "updatedAt": "2026-10-11T06:29:49.066Z",
   "source": "Oil Marketing Companies (IOCL/BPCL/HPCL/IGL)",
   "cities": {
     "noida": {
@@ -12,7 +12,7 @@
     "delhi": {
       "name": "Delhi",
       "state": "Delhi",
-      "petrol": 111.18,
+      "petrol": 111.21,
       "cng": 86.98,
       "diesel": 97.83
     },
@@ -26,21 +26,21 @@
     "ghaziabad": {
       "name": "Ghaziabad",
       "state": "Uttar Pradesh",
-      "petrol": 101.96,
+      "petrol": 101.88,
       "cng": 95.59,
-      "diesel": 95.44
+      "diesel": 95.36
     },
     "faridabad": {
       "name": "Faridabad",
       "state": "Haryana",
-      "petrol": 102.97,
+      "petrol": 103.35,
       "cng": 99.7,
-      "diesel": 95.64
+      "diesel": 96.01
     },
     "mumbai": {
       "name": "Mumbai",
       "state": "Maharashtra",
-      "petrol": 111.18,
+      "petrol": 111.21,
       "cng": 88,
       "diesel": 97.83
     },
@@ -61,7 +61,7 @@
     "chennai": {
       "name": "Chennai",
       "state": "Tamil Nadu",
-      "petrol": 107.76,
+      "petrol": 107.77,
       "cng": 99.5,
       "diesel": 99.55
     },
@@ -75,23 +75,23 @@
     "pune": {
       "name": "Pune",
       "state": "Maharashtra",
-      "petrol": 111.78,
+      "petrol": 112.02,
       "cng": 100.5,
-      "diesel": 98.44
+      "diesel": 98.66
     },
     "jaipur": {
       "name": "Jaipur",
       "state": "Rajasthan",
-      "petrol": 112.66,
+      "petrol": 113.19,
       "cng": 99.5,
-      "diesel": 97.78
+      "diesel": 98.25
     },
     "lucknow": {
       "name": "Lucknow",
       "state": "Uttar Pradesh",
-      "petrol": 101.89,
+      "petrol": 102.26,
       "cng": 95.75,
-      "diesel": 95.36
+      "diesel": 95.75
     },
     "chandigarh": {
       "name": "Chandigarh",
