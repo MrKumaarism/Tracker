@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-18T05:11:00.349Z",
+  "updatedAt": "2026-10-19T05:21:48.636Z",
   "source": "Oil Marketing Companies (IOCL/BPCL/HPCL/IGL)",
   "cities": {
     "noida": {
@@ -96,7 +96,7 @@
     "chandigarh": {
       "name": "Chandigarh",
       "state": "Punjab / Haryana",
-      "petrol": 101.54,
+      "petrol": 101.51,
       "cng": 93.8,
       "diesel": 89.47
     }
