@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-30T06:29:40.468Z",
+  "updatedAt": "2026-10-31T06:19:48.438Z",
   "source": "Oil Marketing Companies (IOCL/BPCL/HPCL/IGL)",
   "cities": {
     "noida": {
@@ -89,7 +89,7 @@
     "lucknow": {
       "name": "Lucknow",
       "state": "Uttar Pradesh",
-      "petrol": 101.86,
+      "petrol": 101.89,
       "cng": 107,
       "diesel": 95.36
     },
