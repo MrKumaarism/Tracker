@@ -386,6 +386,10 @@ function isSupportFuel(vehicleType, fuelType) {
 
         $$('input[name="vehicleType"]').forEach(radio => {
             radio.addEventListener('change', () => {
+                if (!editingId) {
+                    kmInput.value = '';
+                    kmInput.dataset.prefilledPrefix = '';
+                }
                 syncFuelTypeForVehicle();
                 calculateLive();
             });
@@ -554,6 +558,7 @@ function isSupportFuel(vehicleType, fuelType) {
         entries = loadFromLocalStorage();
         userFuelCities = loadUserFuelCities();
         vehicles = loadVehicles();
+        migrateEntries();
         populateCityDropdowns();
         syncPreferencesUI();
         renderVehiclesUI();
@@ -602,14 +607,26 @@ function isSupportFuel(vehicleType, fuelType) {
             if (e.tripEntered === undefined) {
                 e.tripEntered = e.km;
             }
-            // For Scooty or any vehicle with odometer reading entered
-            if (e.vehicleType === 'Scooty' && e.tripEntered >= 11768 && !e.odometer) {
-                e.odometer = e.tripEntered;
+            // For any vehicle with odometer reading entered
+            const veh = getVehicle(e.vehicleType);
+            const initialOdo = (veh && typeof veh.initialOdometer === 'number') ? veh.initialOdometer : (e.vehicleType === 'Scooty' ? 11768 : 0);
+            if (!e.odometer) {
+                if (initialOdo > 0 && e.tripEntered >= initialOdo) {
+                    e.odometer = e.tripEntered;
+                    changed = true;
+                } else if (e.tripEntered >= 500) {
+                    e.odometer = e.tripEntered;
+                    changed = true;
+                } else if (e.km >= 500) {
+                    e.odometer = e.km;
+                    changed = true;
+                }
             }
             return e;
         });
         
         recalculateChainsLocal();
+        if (changed) saveToLocalStorage();
     }
 
     // ═══════════════════════════════════════════════════════
@@ -819,6 +836,8 @@ function isSupportFuel(vehicleType, fuelType) {
                         const prevE = group[i - 1];
                         if (prevE.odometer !== undefined && prevE.odometer > 0) {
                             startOdo = prevE.odometer;
+                        } else if (prevE.tripEntered !== undefined && prevE.tripEntered >= 500) {
+                            startOdo = prevE.tripEntered;
                         } else if (initialOdo > 0 && prevE.tripEntered >= initialOdo) {
                             startOdo = prevE.tripEntered;
                         }
@@ -995,6 +1014,10 @@ function isSupportFuel(vehicleType, fuelType) {
         
         $$('input[name="vehicleType"]').forEach(radio => {
             radio.addEventListener('change', () => {
+                if (!editingId) {
+                    kmInput.value = '';
+                    kmInput.dataset.prefilledPrefix = '';
+                }
                 syncFuelTypeForVehicle();
                 calculateLive();
             });
@@ -1173,6 +1196,10 @@ function isSupportFuel(vehicleType, fuelType) {
             if (prevEntry) {
                 if (prevEntry.odometer !== undefined && prevEntry.odometer > 0) {
                     prevOdo = prevEntry.odometer;
+                } else if (prevEntry.tripEntered !== undefined && prevEntry.tripEntered > 0) {
+                    prevOdo = prevEntry.tripEntered;
+                } else if (prevEntry.km !== undefined && prevEntry.km > 0) {
+                    prevOdo = prevEntry.km;
                 } else if (initialOdo > 0 && prevEntry.tripEntered >= initialOdo) {
                     prevOdo = prevEntry.tripEntered;
                 } else if (initialOdo > 0 && group.length === 1) {
@@ -1251,13 +1278,18 @@ function isSupportFuel(vehicleType, fuelType) {
         const veh = getVehicle(vehicleType);
         const initialOdo = (veh && typeof veh.initialOdometer === 'number') ? veh.initialOdometer : (vehicleType === 'Scooty' ? 11768 : 0);
 
+        const isOdo = (prevOdo !== null && km >= prevOdo)
+            || (initialOdo > 0 && km >= initialOdo)
+            || (prevOdo !== null && prevOdo > 0)
+            || (km >= 500);
+
         const entry = {
             id: editingId || generateId(),
             fuelType,
             vehicleType,
             km: km, // Keep for legacy
             tripEntered: km,
-            odometer: (initialOdo > 0 && km >= initialOdo) ? km : (km > 1000 ? km : undefined),
+            odometer: isOdo ? km : undefined,
             price,
             spent,
             qty,
@@ -1304,7 +1336,7 @@ function isSupportFuel(vehicleType, fuelType) {
             submitBtn.classList.replace('bg-primary', 'bg-secondary');
 
             setTimeout(() => {
-                showToast(editingId ? 'Entry updated' : (initialOdo > 0 ? 'Entry saved' : 'Entry saved. Reset Trip Meter to 0.'));
+                showToast(editingId ? 'Entry updated' : (isOdo || initialOdo > 0 ? 'Entry saved' : 'Entry saved. Reset Trip Meter to 0.'));
                 resetForm();
                 submitBtn.innerHTML = origHtml;
                 submitBtn.classList.replace('bg-secondary', 'bg-primary');
