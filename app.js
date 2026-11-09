@@ -927,7 +927,12 @@ function isSupportFuel(vehicleType, fuelType) {
         if (mobileLoginBtn) mobileLoginBtn.addEventListener('click', handleLoginClick);
 
         // Live calculation
-        kmInput.addEventListener('input', calculateLive);
+        kmInput.addEventListener('input', () => {
+            if (kmInput.value !== (kmInput.dataset.prefilledPrefix || '')) {
+                kmInput.dataset.prefilledPrefix = '';
+            }
+            calculateLive();
+        });
         priceInput.addEventListener('input', () => {
             checkPriceInputDirty();
             calculateLive();
@@ -1059,6 +1064,7 @@ function isSupportFuel(vehicleType, fuelType) {
 
         if (locked) {
             kmInput.value = (reason === 'first' && initialOdo > 0) ? initialOdo : '0';
+            kmInput.dataset.prefilledPrefix = '';
             if (kmHint) {
                 kmHint.classList.remove('hidden');
                 kmHint.textContent = reason === 'support'
@@ -1077,9 +1083,30 @@ function isSupportFuel(vehicleType, fuelType) {
                 kmLabel.textContent = 'Current Odometer Reading (km)';
                 kmHint.classList.remove('hidden');
                 kmHint.textContent = `Previous meter reading was ${formatNumber(prevOdo)} km. Enter your current odometer reading to calculate distance.`;
+
+                // Prefill higher-order prefix (digits before the last 3 digits) when not editing an existing entry
+                if (!editingId) {
+                    const prevInt = Math.floor(prevOdo);
+                    const prevStr = String(prevInt);
+                    let prefix = '';
+                    if (prevStr.length > 3) {
+                        prefix = prevStr.slice(0, -3);
+                    }
+                    const currentVal = kmInput.value.trim();
+                    const lastPrefill = kmInput.dataset.prefilledPrefix || '';
+
+                    if (!currentVal || currentVal === '0' || currentVal === lastPrefill) {
+                        kmInput.value = prefix;
+                        kmInput.dataset.prefilledPrefix = prefix;
+                    }
+                }
             } else {
                 kmLabel.textContent = 'Trip Distance (since last fuel)';
                 kmHint.classList.add('hidden');
+                if (!editingId && kmInput.dataset.prefilledPrefix && kmInput.value === kmInput.dataset.prefilledPrefix) {
+                    kmInput.value = '';
+                }
+                kmInput.dataset.prefilledPrefix = '';
             }
         }
     }
@@ -1342,6 +1369,7 @@ function isSupportFuel(vehicleType, fuelType) {
     function resetForm() {
         editingId = null;
         fuelForm.reset();
+        kmInput.dataset.prefilledPrefix = '';
         setDefaultDate();
 
         // Reset radio defaults — CNG is the usual fill-up
