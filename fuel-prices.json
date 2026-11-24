@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-23T08:16:47.920Z",
+  "updatedAt": "2026-11-24T10:27:03.303Z",
   "source": "Oil Marketing Companies (IOCL/BPCL/HPCL/IGL)",
   "cities": {
     "noida": {
@@ -26,9 +26,9 @@
     "ghaziabad": {
       "name": "Ghaziabad",
       "state": "Uttar Pradesh",
-      "petrol": 101.88,
+      "petrol": 101.8,
       "cng": 95.59,
-      "diesel": 95.36
+      "diesel": 95.29
     },
     "faridabad": {
       "name": "Faridabad",
