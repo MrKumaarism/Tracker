@@ -89,6 +89,7 @@ function isSupportFuel(vehicleType, fuelType) {
     let unsubscribeVehiclesSnapshot = null;
     let unsubscribePreferencesSnapshot = null;
     let activeFilter = 'All';
+    let currentFormPrevOdo = null;
 
     // ─── DOM Helpers ───
     const $ = (s) => document.querySelector(s);
@@ -742,7 +743,10 @@ function isSupportFuel(vehicleType, fuelType) {
                     // row deleted on another device can come back. Visible and
                     // re-deletable; losing an offline entry is not. A tombstone
                     // list is the upgrade if this ever bites.
-                    orphans.forEach(e => putEntryFirestore(e).catch(err => console.error('Sync failed:', err)));
+                    orphans.forEach(e => {
+                        serverEntries.push(e);
+                        putEntryFirestore(e).catch(err => console.error('Sync failed:', err));
+                    });
                     showToast(`Syncing ${orphans.length} offline ${orphans.length === 1 ? 'entry' : 'entries'} to your account`);
                 }
             }
@@ -1208,6 +1212,7 @@ function isSupportFuel(vehicleType, fuelType) {
             }
         }
 
+        currentFormPrevOdo = prevOdo;
         setTripLocked(support || !prevEntry, support ? 'support' : 'first', prevOdo, initialOdo);
 
         if (prevEntry) {
@@ -1260,100 +1265,101 @@ function isSupportFuel(vehicleType, fuelType) {
         e.preventDefault();
         if (saving) return;
 
-        const fuelType    = $('input[name="fuelType"]:checked').value;
-        const vehicleType = $('input[name="vehicleType"]:checked').value;
-        const km          = parseFloat(kmInput.value);
-        const price       = parseFloat(priceInput.value);
-        const spent       = parseFloat(spentInput.value);
-        const date        = dateInput.value;
-
-        if (isNaN(km) || isNaN(price) || isNaN(spent) || km < 0 || price <= 0 || spent <= 0) {
-            showToast('Please fill all fields with valid numbers');
-            return;
-        }
-
-        const qty  = +(spent / price).toFixed(3);
-        const unit = fuelType === 'CNG' ? 'km/kg' : 'km/L';
-
-        const veh = getVehicle(vehicleType);
-        const initialOdo = (veh && typeof veh.initialOdometer === 'number') ? veh.initialOdometer : (vehicleType === 'Scooty' ? 11768 : 0);
-
-        const isOdo = (prevOdo !== null && km >= prevOdo)
-            || (initialOdo > 0 && km >= initialOdo)
-            || (prevOdo !== null && prevOdo > 0)
-            || (km >= 500);
-
-        const entry = {
-            id: editingId || generateId(),
-            fuelType,
-            vehicleType,
-            km: km, // Keep for legacy
-            tripEntered: km,
-            odometer: isOdo ? km : undefined,
-            price,
-            spent,
-            qty,
-            unit,
-            date,
-            createdAt: editingId
-                ? (entries.find(en => en.id === editingId)?.createdAt || Date.now())
-                : Date.now(),
-            updatedAt: Date.now(),
-        };
-
-        if (editingId) {
-            const idx = entries.findIndex(en => en.id === editingId);
-            if (idx !== -1) entries[idx] = entry;
-        } else {
-            entries.push(entry);
-        }
-
-        // Button animation
-        saving = true;
-        submitBtn.disabled = true;
-        submitBtn.setAttribute('aria-busy', 'true');
-        const origHtml = submitBtn.innerHTML;
-        submitBtn.innerHTML = `<span class="material-symbols-outlined text-[18px] animate-spin">sync</span><span>Saving...</span>`;
-        submitBtn.classList.add('opacity-80', 'pointer-events-none');
-
-        // recalculate and sync. A throw here must still release the button,
-        // otherwise one failed sync locks the form for the rest of the session.
+        let origHtml = submitBtn ? submitBtn.innerHTML : 'Save Entry';
         try {
-            await recalculateAndSyncChains();
-        } catch (err) {
-            console.error('Save failed:', err);
-            submitBtn.innerHTML = origHtml;
-            submitBtn.classList.remove('opacity-80', 'pointer-events-none');
-            submitBtn.disabled = false;
-            submitBtn.setAttribute('aria-busy', 'false');
-            saving = false;
-            showToast('Save failed: ' + (err.message || 'unknown error'));
-            return;
-        }
+            const fuelRadio   = $('input[name="fuelType"]:checked');
+            const vehRadio    = $('input[name="vehicleType"]:checked');
+            if (!fuelRadio || !vehRadio) {
+                showToast('Please select fuel type and vehicle');
+                return;
+            }
+            const fuelType    = fuelRadio.value;
+            const vehicleType = vehRadio.value;
+            const km          = parseFloat(kmInput.value);
+            const price       = parseFloat(priceInput.value);
+            const spent       = parseFloat(spentInput.value);
+            const date        = dateInput.value;
 
-        setTimeout(() => {
-            submitBtn.innerHTML = `<span class="material-symbols-outlined text-[18px]">check</span><span>Saved!</span>`;
-            submitBtn.classList.replace('bg-primary', 'bg-secondary');
+            if (isNaN(km) || isNaN(price) || isNaN(spent) || km < 0 || price <= 0 || spent <= 0) {
+                showToast('Please fill all fields with valid numbers');
+                return;
+            }
+
+            const qty  = +(spent / price).toFixed(3);
+            const unit = fuelType === 'CNG' ? 'km/kg' : 'km/L';
+
+            const veh = getVehicle(vehicleType);
+            const initialOdo = (veh && typeof veh.initialOdometer === 'number') ? veh.initialOdometer : (vehicleType === 'Scooty' ? 11768 : 0);
+
+            const activePrevOdo = (typeof currentFormPrevOdo === 'number') ? currentFormPrevOdo : null;
+            const isOdo = (activePrevOdo !== null && km >= activePrevOdo)
+                || (initialOdo > 0 && km >= initialOdo)
+                || (km >= 500);
+
+            const entry = {
+                id: editingId || generateId(),
+                fuelType,
+                vehicleType,
+                km: km, // Keep for legacy
+                tripEntered: km,
+                odometer: isOdo ? km : undefined,
+                price,
+                spent,
+                qty,
+                unit,
+                date,
+                createdAt: editingId
+                    ? (entries.find(en => en.id === editingId)?.createdAt || Date.now())
+                    : Date.now(),
+                updatedAt: Date.now(),
+            };
+
+            if (editingId) {
+                const idx = entries.findIndex(en => en.id === editingId);
+                if (idx !== -1) entries[idx] = entry;
+            } else {
+                entries.push(entry);
+            }
+
+            // Button animation
+            saving = true;
+            submitBtn.disabled = true;
+            submitBtn.setAttribute('aria-busy', 'true');
+            origHtml = submitBtn.innerHTML;
+            submitBtn.innerHTML = `<span class="material-symbols-outlined text-[18px] animate-spin">sync</span><span>Saving...</span>`;
+            submitBtn.classList.add('opacity-80', 'pointer-events-none');
+
+            // recalculate and sync
+            await recalculateAndSyncChains();
 
             setTimeout(() => {
-                showToast(editingId ? 'Entry updated' : (isOdo || initialOdo > 0 ? 'Entry saved' : 'Entry saved. Reset Trip Meter to 0.'));
-                resetForm();
-                submitBtn.innerHTML = origHtml;
-                submitBtn.classList.replace('bg-secondary', 'bg-primary');
+                submitBtn.innerHTML = `<span class="material-symbols-outlined text-[18px]">check</span><span>Saved!</span>`;
+                submitBtn.classList.replace('bg-primary', 'bg-secondary');
+
+                setTimeout(() => {
+                    showToast(editingId ? 'Entry updated' : (isOdo || initialOdo > 0 ? 'Entry saved' : 'Entry saved. Reset Trip Meter to 0.'));
+                    resetForm();
+                    submitBtn.innerHTML = origHtml;
+                    submitBtn.classList.replace('bg-secondary', 'bg-primary');
+                    submitBtn.classList.remove('opacity-80', 'pointer-events-none');
+                    submitBtn.disabled = false;
+                    submitBtn.setAttribute('aria-busy', 'false');
+                    saving = false;
+                    render();
+                }, 1500);
+            }, 600);
+        } catch (err) {
+            console.error('Save failed:', err);
+            if (submitBtn) {
+                submitBtn.innerHTML = origHtml || 'Save Entry';
                 submitBtn.classList.remove('opacity-80', 'pointer-events-none');
+                submitBtn.classList.replace('bg-secondary', 'bg-primary');
                 submitBtn.disabled = false;
                 submitBtn.setAttribute('aria-busy', 'false');
-                saving = false;
-                render();
-            }, 1500);
-        }, 600);
-    }
-
-    async function persist(entry) {
-        if (currentUser) {
-            try { await putEntryFirestore(entry); } catch(e) { console.error(e); }
+            }
+            saving = false;
+            showToast('Save failed: ' + (err.message || 'unknown error'));
         }
-        saveToLocalStorage();
     }
 
     // ─── Edit ───
